@@ -156,7 +156,7 @@ public class LuaSpriteController {
             if (keyframes != null)
                 if (keyframes.enabled == false)                    return true;
                 else if (loop == KeyframeCollection.LoopMode.LOOP) return false;
-                else                                               return keyframes.enabled && keyframes.AnimationComplete();
+                else                                               return keyframes.enabled && keyframes.animationComplete();
             return false;
         }
     }
@@ -290,6 +290,8 @@ public class LuaSpriteController {
             // We mod the value from 0 to 360 because angles are between 0 and 360 normally
             internalRotation.z = Math.Mod(value, 360);
             img.GetComponent<RectTransform>().eulerAngles = internalRotation;
+            if (img.GetComponent<Projectile>() && img.GetComponent<Projectile>().isPP())
+                img.GetComponent<Projectile>().needSizeRefresh = true;
         }
     }
 
@@ -411,6 +413,8 @@ public class LuaSpriteController {
 
     // Sets both xScale and yScale of a sprite 
     public void Scale(float xs, float ys) {
+        if (img.GetComponent<Projectile>())
+            img.GetComponent<Projectile>().needSizeRefresh = true;
         xScale = xs;
         yScale = ys;
         if (img.GetComponent<Image>()) nativeSizeDelta = new Vector2(img.GetComponent<Image>().sprite.texture.width, img.GetComponent<Image>().sprite.texture.height);
@@ -446,7 +450,7 @@ public class LuaSpriteController {
         for (int i = 0; i < spriteNames.Length; i++) {
             // at least one sprite in the sequence was unable to be loaded
             if (SpriteRegistry.Get(spriteNames[i]) == null)
-                throw new CYFException("sprite.SetAnimation: Failed to load sprite with the name\" " + spriteNames[i] + "\". Are you sure it is spelled correctly?");
+                throw new CYFException("sprite.SetAnimation: Failed to load sprite with the name \"" + spriteNames[i] + "\". Are you sure it is spelled correctly?");
             
             kfArray[i] = new Keyframe(SpriteRegistry.Get(spriteNames[i]), spriteNames[i].ToLower());
         }
@@ -507,13 +511,15 @@ public class LuaSpriteController {
     public int currentframe {
         set {
             if (img.GetComponent<Image>()) {
-                if (keyframes != null) {
+                if (keyframes != null && keyframes.enabled) {
                     if (value < 1 || value > keyframes.keyframes.Length)
                         throw new CYFException("sprite.currentframe: New value " + value + " is out of bounds.");
                     else {
+                        // Store the previous "progress" of the frame
+                        float progress = (keyframes.currTime / keyframes.timePerFrame) % 1;
                         // Calls keyframes.currTime %= keyframes.totalTime
                         keyframes.SetLoop(keyframes.loop);
-                        keyframes.currTime = value * keyframes.timePerFrame;
+                        keyframes.currTime = ((value - 1) * keyframes.timePerFrame) + (progress * keyframes.timePerFrame);
                     }
                 } else
                     throw new CYFException("sprite.currentframe: You can not set the current frame of a sprite without an active animation.");
@@ -522,6 +528,40 @@ public class LuaSpriteController {
         get {
             if (img.GetComponent<Image>() && keyframes != null)
                 return keyframes.getIndex();
+            return 0;
+        }
+    }
+    
+    // Gets or sets the current "play position" of a sprite's animation, in seconds.
+    public float currenttime {
+        set {
+            if (img.GetComponent<Image>()) {
+                if (keyframes != null && keyframes.enabled) {
+                    if (value < 0 || value > keyframes.totalTime)
+                        throw new CYFException("sprite.currenttime: New value " + value + " is out of bounds.");
+                    else
+                        keyframes.currTime = value % keyframes.totalTime;
+                } else
+                    throw new CYFException("sprite.currenttime: You can not set the current time of a sprite without an active animation.");
+            }
+        }
+        get {
+            if (img.GetComponent<Image>() && keyframes != null) {
+                if (keyframes.enabled) {
+                    if (!keyframes.animationComplete())
+                        return keyframes.currTime % keyframes.totalTime;
+                }
+                return keyframes.totalTime;
+            }
+            return 0;
+        }
+    }
+    
+    // Gets (read-only) the total time an animation will run for, in seconds.
+    public float totaltime {
+        get {
+            if (img.GetComponent<Image>() && keyframes != null)
+                return keyframes.totalTime;
             return 0;
         }
     }
@@ -579,6 +619,9 @@ public class LuaSpriteController {
         if (tag == "enemy" || tag == "bubble") {
             UnitaleUtil.WriteInLogAndDebugger("sprite.Remove(): You can't remove a " + tag + "'s sprite!");
             return;
+        } else if (img.gameObject.name == "player" && !GlobalControls.retroMode) {
+            UnitaleUtil.WriteInLogAndDebugger("sprite.Remove(): You can't remove the Player's sprite!");
+            return;
         }
 
         if (tag == "projectile") {
@@ -613,7 +656,7 @@ public class LuaSpriteController {
             return;
         if (keyframes == null)
             return;
-        Keyframe k = keyframes.GetCurrent();
+        Keyframe k = keyframes.getCurrent();
         Sprite s = SpriteRegistry.GENERIC_SPRITE_PREFAB.sprite;
         if (k != null)
             s = k.sprite;

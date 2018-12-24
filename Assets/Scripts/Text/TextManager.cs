@@ -55,7 +55,7 @@ public class TextManager : MonoBehaviour {
     private string[] mugshotList = null;
     private string finalMugshot;
     private float mugshotTimer;
-    private int letterSpeed = 1;
+    // private int letterSpeed = 1;
     private int letterOnceValue = 0;
     private KeyCode waitingChar = KeyCode.None;
 
@@ -66,7 +66,7 @@ public class TextManager : MonoBehaviour {
 
     private float letterTimer = 0.0f;
     private float timePerLetter;
-    private float singleFrameTiming = 1.0f / 30;
+    private float singleFrameTiming = 1.0f / 20;
 
     public ScriptWrapper caller;
 
@@ -327,7 +327,8 @@ public class TextManager : MonoBehaviour {
                     currentLine = line;
                     currentX = self.position.x + offset.x;
                     currentY = self.position.y + offset.y;
-                    if (GetType() != typeof(LuaTextManager))
+                    // allow Game Over fonts to enjoy the fixed text positioning, too!
+                    if (GetType() != typeof(LuaTextManager) && this.gameObject.name != "TextParent" && this.gameObject.name != "ReviveText")
                         currentY -= Charset.LineSpacing;
                     /*if (GetType() == typeof(LuaTextManager))
                         print("currentY from ShowLine (" + textQueue[currentLine].Text + ") = " + self.position.y + " + " + offset.y + " - " + Charset.LineSpacing + " = " + currentY);*/
@@ -336,7 +337,7 @@ public class TextManager : MonoBehaviour {
                     /*letterEffect = "none";
                     textEffect = null;
                     letterIntensity = 0;*/
-                    letterSpeed = 1;
+                    // letterSpeed = 1;
                     displayImmediate = textQueue[line].ShowImmediate;
                     SpawnText();
                     //if (!overworld)
@@ -482,7 +483,6 @@ public class TextManager : MonoBehaviour {
         // hopefully we will never have to use any lambda functions on Lua Text Managers...
         if (GetType() == typeof(LuaTextManager)&&
             (new StackFrame(1).GetMethod().Name == "lambda_method" || new StackFrame(1).GetMethod().Name == "NextLine")) {
-            GetComponent<LuaTextManager>().isActive = false;
             GameObject.Destroy(this.transform.parent.gameObject);
         }
     }
@@ -619,8 +619,8 @@ public class TextManager : MonoBehaviour {
                     string command = ParseCommandInline(currentText, ref i);
                     if (command != null && !LateStartWaiting) {
                         if (commandList.Contains(command.Split(':')[0])) {
-                            // Work-around for [instant]/[instant:allowcommand]
-                            if ((command == "instant" || command == "instant:allowcommand") && !GlobalControls.retroMode) {
+                            // Work-around for [noskip], [instant] and [instant:allowcommand]
+                            if (command == "noskip" || (!GlobalControls.retroMode && (command == "instant" || command == "instant:allowcommand"))) {
                                 // Copy all text before the command
                                 string precedingText = currentText.Substring(0, i - (command.Length + 1));
                                 
@@ -634,31 +634,11 @@ public class TextManager : MonoBehaviour {
                                     }
                                 }
                                 
-                                // Confirm that [instant]/[instant:allowcommand] is at the beginning!
+                                // Confirm that our command is at the beginning!
                                 if (precedingText.Length == 0)
                                     PreCreateControlCommand(command);
                             } else
                                 PreCreateControlCommand(command);
-                            
-                            // Work-around for noskip
-                            if (command == "noskip") {
-                                // Copy all text before the command
-                                string precedingText = currentText.Substring(0, i - (command.Length + 1));
-                                
-                                // Remove all commands
-                                while (precedingText.IndexOf('[') > -1) {
-                                    for (int j = 0; j < precedingText.Length; j++) {
-                                        if (precedingText[j] == ']') {
-                                            precedingText = precedingText.Replace(precedingText.Substring(0, j + 1), "");
-                                            break;
-                                        }
-                                    }
-                                }
-                                
-                                // Confirm that the effects of noskip should be applied!
-                                if (precedingText.Length == 0)
-                                    currentSkippable = false;
-                            }
                             
                             continue;
                         } else
@@ -707,7 +687,8 @@ public class TextManager : MonoBehaviour {
 
             letterReferences[i] = ltrImg;
             
-            if (GetType() == typeof(LuaTextManager)) {
+            // allow Game Over fonts to enjoy the fixed text positioning, too!
+            if (GetType() == typeof(LuaTextManager) || this.gameObject.name == "TextParent" || this.gameObject.name == "ReviveText") {
                 float diff = (Charset.Letters[currentText[i]].border.w - Charset.Letters[currentText[i]].border.y);
                 // diff += Charset.LineSpacing;
                 ltrRect.localPosition = new Vector3(currentX - self.position.x - .9f, (currentY - self.position.y) + diff + .1f, 0);
@@ -825,7 +806,8 @@ public class TextManager : MonoBehaviour {
             else
                 return;
         }
-
+        
+        /*
         letterTimer += Time.deltaTime;
         if ((letterTimer > timePerLetter || firstChar) && !LineComplete()) {
             firstChar = false;
@@ -841,6 +823,30 @@ public class TextManager : MonoBehaviour {
                         return;
                     }
         }
+        */
+        
+        letterTimer += Time.deltaTime;
+        if (((letterTimer >= timePerLetter) || firstChar) && !LineComplete() && timePerLetter > 0f) {
+            int repeats = (int)Mathf.Floor(letterTimer / timePerLetter);
+            
+            bool soundPlayed = false;
+            int lastLetter = -1;
+            
+            for (int i = 0; i < repeats; i++) {
+                if (!HandleShowLetter(ref soundPlayed, ref lastLetter)) {
+                    HandleShowLettersOnce(ref soundPlayed, ref lastLetter);
+                    return;
+                }
+                
+                if (!firstChar)
+                    letterTimer -= timePerLetter;
+                else {
+                    firstChar = false;
+                    return;
+                }
+            }
+        }
+        
         noSkip1stFrame = false;
     }
 
@@ -1040,7 +1046,7 @@ public class TextManager : MonoBehaviour {
                 break;
 
             case "w":
-                if (!instantCommand)
+                if (!instantCommand && !displayImmediate)
                     letterTimer = timePerLetter - (singleFrameTiming * ParseUtil.GetInt(cmds[1]));
                 break;
 
@@ -1050,7 +1056,16 @@ public class TextManager : MonoBehaviour {
             case "finished":    autoSkipThis = true;                                           break;
             case "nextthisnow": autoSkip = true;                                               break;
             case "noskipatall": blockSkip = true;                                              break;
-            case "speed":       letterSpeed = Int32.Parse(args[0]);                            break;
+            //case "speed":       letterSpeed = Int32.Parse(args[0]);                            break;
+            case "speed":
+                //you can only set text speed to a number >= 0
+                float newSpeedValue = float.Parse(args[0]);
+                // protect against divide-by-zero errors
+                if (newSpeedValue > 0f)
+                    timePerLetter = singleFrameTiming / newSpeedValue;
+                else if (newSpeedValue == 0f)
+                    timePerLetter = 0f;
+                break;
 
             case "letters":
                 if (!instantCommand)

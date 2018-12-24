@@ -106,8 +106,8 @@ public class LuaGeneralOW {
     /// </summary>
     [CYFEventFunction] public void GameOver(DynValue deathText = null, string deathMusic = null) {
         PlayerCharacter.instance.HP = PlayerCharacter.instance.MaxHP;
-        Transform rt = GameObject.Find("Player").GetComponent<Transform>();
-        rt.position = new Vector3(rt.position.x, rt.position.y, -1000);
+        /*Transform rt = GameObject.Find("Player").GetComponent<Transform>();
+        rt.position = new Vector3(rt.position.x, rt.position.y, -1000);*/
         string[] deathTable = null;
 
         if (deathText != null) {
@@ -123,8 +123,27 @@ public class LuaGeneralOW {
 
         GlobalControls.Music = UnitaleUtil.GetCurrentOverworldAudio().clip;
         PlayerOverworld.instance.enabled = false;
-
+        
+        // Stop the "kept audio" if it is playing
+        if (PlayerOverworld.audioKept == UnitaleUtil.GetCurrentOverworldAudio()) {
+            PlayerOverworld.audioKept.Stop();
+            PlayerOverworld.audioKept.clip = null;
+            PlayerOverworld.audioKept.time = 0;
+        }
+        
+        //Saves our most recent map and position to control where the player respawns
+        string mapName;
+        if (UnitaleUtil.MapCorrespondanceList.ContainsKey(SceneManager.GetActiveScene().name)) mapName = UnitaleUtil.MapCorrespondanceList[SceneManager.GetActiveScene().name];
+        else mapName = SceneManager.GetActiveScene().name;
+        LuaScriptBinder.Set(null, "PlayerMap", DynValue.NewString(mapName));
+        
+        Transform tf = GameObject.Find("Player").transform;
+        LuaScriptBinder.Set(null, "PlayerPosX", DynValue.NewNumber(tf.position.x));
+        LuaScriptBinder.Set(null, "PlayerPosY", DynValue.NewNumber(tf.position.y));
+        LuaScriptBinder.Set(null, "PlayerPosZ", DynValue.NewNumber(tf.position.z));
+        
         GameObject.FindObjectOfType<GameOverBehavior>().StartDeath(deathTable, deathMusic);
+        
         appliedScript.Call("CYFEventNextCommand");
     }
 
@@ -136,7 +155,7 @@ public class LuaGeneralOW {
     [CYFEventFunction] public void PlayBGM(string bgm, float volume) {
         volume = Mathf.Clamp01(volume);
         if (AudioClipRegistry.GetMusic(bgm) == null)
-            throw new CYFException("General.PlayBGM: The given BGM doesn't exist. Please check if you haven't mispelled it.");
+            throw new CYFException("General.PlayBGM: The given BGM doesn't exist. Please check if you've spelled it correctly.");
         AudioSource audio = UnitaleUtil.GetCurrentOverworldAudio();
         audio.clip = AudioClipRegistry.GetMusic(bgm);
         audio.volume = volume;
@@ -168,7 +187,7 @@ public class LuaGeneralOW {
     [CYFEventFunction] public void PlaySound(string sound, float volume = 0.65f) {
         volume = Mathf.Clamp01(volume);
         if (AudioClipRegistry.GetSound(sound) == null)
-            throw new CYFException("General.PlaySound: The given BGM doesn't exist. Please check if you haven't mispelled it.");
+            throw new CYFException("General.PlaySound: The given BGM doesn't exist. Please check if you've spelled it correctly.");
         UnitaleUtil.PlaySound("PlaySound", AudioClipRegistry.GetSound(sound), volume);
         //GameObject.Find("Player").GetComponent<AudioSource>().PlayOneShot(AudioClipRegistry.GetSound(sound), volume);
         appliedScript.Call("CYFEventNextCommand");

@@ -131,6 +131,14 @@ public class PlayerController : MonoBehaviour {
         // set timer and play the hurt sound if player was actually hurt
         // TODO: factor in stats and what the actual damage should be
         // TONOTDO: I don't care about stats, lvk :D
+        
+        // reset the hurt timer if the arguments passed are (0, 0)
+        if (damage == 0 && invulnerabilitySeconds == 0) {
+            invulTimer = 0;
+            selfImg.enabled = true;
+            return;
+        }
+        
         if (damage >= 0 && (invulTimer <= 0 || invulnerabilitySeconds < 0)) {
             if (soundDelay < 0) {
                 soundDelay = 2;
@@ -400,12 +408,16 @@ public class PlayerController : MonoBehaviour {
             tempQueue = new Vector2(-5000, -5000);
         }
         */
+        
+        // prevent player actions from working and the timer from decreasing, if the game is paused
+        if (UIController.instance.frozenState != UIController.UIState.PAUSE)
+            return;
+        
         // handle input and movement, unless control is overridden by the UI controller, for instance
         if (!overrideControl) {
             intendedShift = Vector2.zero; // reset direction we are going in
             HandleInput(); // get direction we want to go in
             Move(intendedShift);
-            
         }
 
         // if the invulnerability timer has more than 0 seconds (usually when you get hurt), blink to reflect the hurt state
@@ -419,6 +431,10 @@ public class PlayerController : MonoBehaviour {
             if (invulTimer <= 0.0f)
                 selfImg.enabled = true;
         }
+        
+        // constantly update the hitbox to match the position of the sprite itself
+        playerAbs.x = (luaStatus.sprite.absx - (luaStatus.sprite.width  * self.pivot.x)) + hitboxInset;
+        playerAbs.y = (luaStatus.sprite.absy - (luaStatus.sprite.height * self.pivot.y)) + hitboxInset;
 
         soundDelay--;
     }

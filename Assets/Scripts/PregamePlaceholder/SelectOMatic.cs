@@ -9,7 +9,7 @@ using MoonSharp.Interpreter;
 public class SelectOMatic : MonoBehaviour {
     private static int CurrentSelectedMod = 0;
     private static List<DirectoryInfo> modDirs;
-    private static Dictionary<string, Sprite> bgs = new Dictionary<string, Sprite>();
+    private Dictionary<string, Sprite> bgs = new Dictionary<string, Sprite>();
     private GameObject encounterBox;
     private GameObject devMod;
     private GameObject btnList;
@@ -126,7 +126,7 @@ public class SelectOMatic : MonoBehaviour {
             
             // back button
             GameObject back = encounterBox.transform.Find("ScrollCutoff/Content/Back").gameObject;
-            back.transform.Find("Text").GetComponent<Text>().text = "BCAK";
+            back.transform.Find("Text").GetComponent<Text>().text = "← BCAK";
             
             // mod list button
             btnList.transform.Find("Label").gameObject.GetComponent<Text>().text = "MDO LITS";
@@ -297,11 +297,11 @@ public class SelectOMatic : MonoBehaviour {
         GameObject.Find("EncounterCountShadow").GetComponent<Text>().text = GameObject.Find("EncounterCount").GetComponent<Text>().text;
         
         // Update the color of the arrows
-        if (CurrentSelectedMod == 0)
+        if (CurrentSelectedMod == 0 && modDirs.Count == 1)
             GameObject.Find("BtnBack").transform.Find("Text").gameObject.GetComponent<Text>().color = new Color(0.25f, 0.25f, 0.25f, 1f);
         else
             GameObject.Find("BtnBack").transform.Find("Text").gameObject.GetComponent<Text>().color = new Color(1f, 1f, 1f, 1f);
-        if (CurrentSelectedMod == modDirs.Count - 1)
+        if (CurrentSelectedMod == modDirs.Count - 1 && modDirs.Count == 1)
             GameObject.Find("BtnNext").transform.Find("Text").gameObject.GetComponent<Text>().color = new Color(0.25f, 0.25f, 0.25f, 1f);
         else
             GameObject.Find("BtnNext").transform.Find("Text").gameObject.GetComponent<Text>().color = new Color(1f, 1f, 1f, 1f);
@@ -312,10 +312,9 @@ public class SelectOMatic : MonoBehaviour {
     private void ScrollMods(int dir) {
         // first, determine if the next mod should be shown
         bool animate = false;
-        if ((dir == -1 && CurrentSelectedMod > 0) || (dir == 1 && CurrentSelectedMod < modDirs.Count - 1)) {
-            // show the new mod
-            animate = true;
-        }
+        // if ((dir == -1 && CurrentSelectedMod > 0) || (dir == 1 && CurrentSelectedMod < modDirs.Count - 1)) {
+        if (modDirs.Count > 1)
+            animate = true; // show the new mod
         
         // if the new mod is being shown, start the animation!
         if (animate) {
@@ -354,7 +353,9 @@ public class SelectOMatic : MonoBehaviour {
             GameObject.Find("EncounterCount").transform.Translate(640 * dir, 0, 0);
             
             // actually choose the new mod
-            CurrentSelectedMod += dir;
+            CurrentSelectedMod = (CurrentSelectedMod + dir) % modDirs.Count;
+            if (CurrentSelectedMod < 0) CurrentSelectedMod += modDirs.Count;
+            
             ShowMod(CurrentSelectedMod);
         }
     }
@@ -411,7 +412,7 @@ public class SelectOMatic : MonoBehaviour {
         }
         
         // detect hovering over the Exit button and handle fading
-        if (Input.mousePosition.x < 70 && Input.mousePosition.y > 450 && ExitButtonAlpha < 1f) {
+        if ((Input.mousePosition.x / Screen.width) * 640 < 70 && (Input.mousePosition.y / Screen.height) * 480 > 450 && ExitButtonAlpha < 1f) {
             ExitButtonAlpha += 0.05f;
             GameObject.Find("BtnExit/Text").GetComponent<Text>().color =        new Color(1f, 1f, 1f, ExitButtonAlpha);
             GameObject.Find("BtnExit/TextShadow").GetComponent<Text>().color =  new Color(0f, 0f, 0f, ExitButtonAlpha);
@@ -423,7 +424,7 @@ public class SelectOMatic : MonoBehaviour {
         
         // detect hovering over the Options button and handle fading
         if (GlobalControls.modDev) {
-            if (Input.mousePosition.x > 550 && Input.mousePosition.y > 450 && OptionsButtonAlpha < 1f) {
+            if ((Input.mousePosition.x / Screen.width) * 640 > 550 && (Input.mousePosition.y / Screen.height) * 480 > 450 && OptionsButtonAlpha < 1f) {
                 OptionsButtonAlpha += 0.05f;
                 GameObject.Find("BtnOptions/Text").GetComponent<Text>().color =        new Color(1f, 1f, 1f, OptionsButtonAlpha);
                 GameObject.Find("BtnOptions/TextShadow").GetComponent<Text>().color =  new Color(0f, 0f, 0f, OptionsButtonAlpha);
@@ -466,10 +467,9 @@ public class SelectOMatic : MonoBehaviour {
                     modFolderMiniMenu();
                     encounterBox.transform.Find("ScrollCutoff/Content").GetChild(selectedItem).GetComponent<MenuButton>().StartAnimation(1);
                 // Open the encounter list or start the encounter (if there is only one encounter)
-                } else if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.Return)) {
+                } else if (Input.GetKeyDown(KeyCode.Z) || Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.Return))
                     GameObject.Find("ModBackground").GetComponent<Button>().onClick.Invoke();
-                    encounterBox.transform.Find("ScrollCutoff/Content").GetChild(selectedItem).GetComponent<MenuButton>().StartAnimation(1);
-                }
+                    // encounterBox.transform.Find("ScrollCutoff/Content").GetChild(selectedItem).GetComponent<MenuButton>().StartAnimation(1);
             }
             
             // Return to the Disclaimer screen
