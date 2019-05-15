@@ -44,7 +44,7 @@ public class UIController : MonoBehaviour {
 
     // DEBUG Making running away a bit more fun. Remove this later.
     private bool musicPausedFromRunning = false;
-    //private int runawayattempts = 0;
+    private int runawayattempts = 0;
 
     private int selectedAction = 0;
     private int selectedEnemy = 0;
@@ -120,14 +120,17 @@ public class UIController : MonoBehaviour {
         if (GameObject.Find("TopLayer"))
             spr.layer = "Top";
         spr.Scale(640, 480);
+        if (GlobalControls.modDev) // empty the inventory if not in the overworld
+            Inventory.inventory.Clear();
         Inventory.RemoveAddedItems();
         GlobalControls.lastTitle = false;
         PlayerCharacter.instance.MaxHPShift = 0;
-        #if UNITY_STANDALONE_WIN || UNITY_EDITOR
+        PlayerCharacter.instance.SetLevel(PlayerCharacter.instance.LV);
+        #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
             if (GlobalControls.crate)  Misc.WindowName = ControlPanel.instance.WinodwBsaisNmae;
             else                       Misc.WindowName = ControlPanel.instance.WindowBasisName;
         #endif
-        
+
         // reset the battle camera's position
         Misc.ResetCamera();
         
@@ -139,6 +142,7 @@ public class UIController : MonoBehaviour {
         
         for (int i = 0; i < LuaScriptBinder.scriptlist.Count; i++)
             LuaScriptBinder.scriptlist[i] = null;
+        LuaScriptBinder.scriptlist.Clear();
         LuaScriptBinder.ClearBattleVar();
         GlobalControls.stopScreenShake = true;
         MusicManager.hiddenDictionary.Clear();
@@ -284,7 +288,7 @@ public class UIController : MonoBehaviour {
         if (state == UIState.DEFENDING || state == UIState.ENEMYDIALOGUE) {
             PlayerController.instance.setControlOverride(state != UIState.DEFENDING);
             textmgr.DestroyText();
-            PlayerController.instance.SetPositionQueue(320, 160, true);
+            PlayerController.instance.SetPosition(320, 160, true);
             PlayerController.instance.GetComponent<Image>().enabled = true;
             fightBtn.overrideSprite = null;
             actBtn.overrideSprite = null;
@@ -316,6 +320,10 @@ public class UIController : MonoBehaviour {
             encounter.EndWave();
         switch (this.state) {
             case UIState.ATTACKING:
+                // Error for no active enemies
+                if (encounter.EnabledEnemies.Length == 0)
+                    throw new CYFException("Cannot enter state ATTACKING with no active enemies.");
+
                 textmgr.DestroyText();
                 PlayerController.instance.GetComponent<Image>().enabled = false;
                 if (!fightUI.multiHit) {
@@ -355,9 +363,10 @@ public class UIController : MonoBehaviour {
 
             case UIState.ITEMMENU:
                 battleDialogued = false;
-                if (Inventory.inventory.Count == 0) {
+                // Error for empty inventory
+                if (Inventory.inventory.Count == 0)
                     throw new CYFException("Cannot enter state ITEMMENU with empty inventory.");
-                } else {
+                else {
                     string[] items = GetInventoryPage(0);
                     selectedItem = 0;
                     textmgr.SetText(new SelectMessage(items, false));
@@ -392,6 +401,10 @@ public class UIController : MonoBehaviour {
                 break;
 
             case UIState.ENEMYSELECT:
+                // Error for no active enemies
+                if (encounter.EnabledEnemies.Length == 0)
+                    throw new CYFException("Cannot enter state ENEMYSELECT with no active enemies.");
+
                 string[] names = new string[encounter.EnabledEnemies.Length];
                 string[] colorPrefixes = new string[names.Length];
                 for (int i = 0; i < encounter.EnabledEnemies.Length; i++) {
@@ -495,7 +508,18 @@ public class UIController : MonoBehaviour {
                     Image speechBubImg = speechBub.GetComponent<Image>();
                     if (sbTextMan.CharacterCount(msgs[0]) == 0) speechBubImg.color = new Color(speechBubImg.color.r, speechBubImg.color.g, speechBubImg.color.b, 0);
                     else                                        speechBubImg.color = new Color(speechBubImg.color.r, speechBubImg.color.g, speechBubImg.color.b, 1);
-                    SpriteUtil.SwapSpriteFromFile(speechBubImg, encounter.EnabledEnemies[i].DialogBubble, i);
+
+                    // error catcher
+                    try { SpriteUtil.SwapSpriteFromFile(speechBubImg, encounter.EnabledEnemies[i].DialogBubble, i); }
+                    catch {
+                        if (encounter.EnabledEnemies[i].DialogBubble != "UI/SpeechBubbles/")
+                            UnitaleUtil.DisplayLuaError(encounter.EnabledEnemies[i].scriptName + ": Creating a dialogue bubble",
+                                                        "The dialogue bubble " + encounter.EnabledEnemies[i].script.GetVar("dialogbubble").ToString() + " doesn't exist.");
+                        else
+                            UnitaleUtil.DisplayLuaError(encounter.EnabledEnemies[i].scriptName + ": Creating a dialogue bubble",
+                                                        "This monster has no set dialogue bubble.");
+                    }
+
                     Sprite speechBubSpr = speechBubImg.sprite;
                     // TODO improve position setting/remove hardcoding of position setting
                     speechBub.transform.SetParent(encounter.EnabledEnemies[i].transform);
@@ -527,6 +551,8 @@ public class UIController : MonoBehaviour {
     }
 
     public static void SwitchStateOnString(Script scr, string state) {
+        if (state == null)
+            throw new CYFException("State: Argument cannot be nil.");
         if (!instance.encounter.gameOverStance) {
             try {
                 UIState newState = (UIState)Enum.Parse(typeof(UIState), state, true);
@@ -537,7 +563,7 @@ public class UIController : MonoBehaviour {
                     throw new CYFException("The state \"" + state + "\" is not a valid state. Are you sure it exists?\n\nPlease double-check in the Misc. Functions section of the docs for a list of every valid state.");
                 // a different error has occured
                 else
-                    throw new CYFException("An error occured while trying to enter the state \"" + state + "\":\n" + ex.Message + "\n\nTraceback (for devs):\n" + ex.ToString());
+                    throw new CYFException("An error occured while trying to enter the state \"" + state + "\":\n\n" + ex.Message + "\n\nTraceback (for devs):\n" + ex.ToString());
             }
         }
     }
@@ -814,14 +840,20 @@ public class UIController : MonoBehaviour {
                 case UIState.ACTIONSELECT:
                     switch (action) {
                         case Actions.FIGHT:
-                            SwitchState(UIState.ENEMYSELECT);
+                            if (encounter.EnabledEnemies.Length > 0)
+                                SwitchState(UIState.ENEMYSELECT);
+                            else
+                                textmgr.DoSkipFromPlayer();
                             break;
 
                         case Actions.ACT:
                             if (GlobalControls.crate)
                                 if (ControlPanel.instance.Safe) UnitaleUtil.PlaySound("MEOW", "sounds/meow" + Math.RandomRange(1, 8));
                                 else UnitaleUtil.PlaySound("MEOW", "sounds/meow" + Math.RandomRange(1, 9));
-                            else SwitchState(UIState.ENEMYSELECT);
+                            else if (encounter.EnabledEnemies.Length > 0)
+                                SwitchState(UIState.ENEMYSELECT);
+                            else
+                                textmgr.DoSkipFromPlayer();
                             break;
 
                         case Actions.ITEM:
@@ -940,8 +972,72 @@ public class UIController : MonoBehaviour {
                             }
                         }*/
 
-                    } else if (selectedMercy == 1)
-                        StartCoroutine(ISuperFlee());
+                    } else if (selectedMercy == 1) {
+                        if (!GlobalControls.retroMode) {
+                            if ((LuaEnemyEncounter.script.GetVar("fleesuccess").Type != DataType.Boolean && Math.RandomRange(0, 2) == 0)
+                              || LuaEnemyEncounter.script.GetVar("fleesuccess").Boolean)
+                                StartCoroutine(ISuperFlee());
+                            else
+                                SwitchState(UIState.ENEMYDIALOGUE);
+                        } else {
+                            PlayerController.instance.GetComponent<Image>().enabled = false;
+                            AudioClip yay = AudioClipRegistry.GetSound("runaway");
+                            AudioSource.PlayClipAtPoint(yay, Camera.main.transform.position);
+                            string fittingLine = "";
+                            switch (runawayattempts)
+                            {
+                                case 0:
+                                    fittingLine = "...[w:15]But you realized\rthe overworld was missing.";
+                                    break;
+
+                                case 1:
+                                    fittingLine = "...[w:15]But the overworld was\rstill missing.";
+                                    break;
+
+                                case 2:
+                                    fittingLine = "You walked off as if there\rwere an overworld, but you\rran into an invisible wall.";
+                                    break;
+
+                                case 3:
+                                    fittingLine = "...[w:15]On second thought, the\rembarassment just now\rwas too much.";
+                                    break;
+
+                                case 4:
+                                    fittingLine = "But you became aware\rof the skeleton inside your\rbody, and forgot to run.";
+                                    break;
+
+                                case 5:
+                                    fittingLine = "But you needed a moment\rto forget about your\rscary skeleton.";
+                                    break;
+
+                                case 6:
+                                    fittingLine = "...[w:15]You feel as if you\rtried this before.";
+                                    break;
+
+                                case 7:
+                                    fittingLine = "...[w:15]Maybe if you keep\rsaying that, the\roverworld will appear.";
+                                    break;
+
+                                case 8:
+                                    fittingLine = "...[w:15]Or not.";
+                                    break;
+
+                                default:
+                                    fittingLine = "...[w:15]But you decided to\rstay anyway.";
+                                    break;
+                            }
+
+                            ActionDialogResult(new TextMessage[]
+                                {
+                                    new RegularMessage("I'm outta here."),
+                                    new RegularMessage(fittingLine)
+                                },
+                                UIState.ENEMYDIALOGUE);
+                            Camera.main.GetComponent<AudioSource>().Pause();
+                            musicPausedFromRunning = true;
+                            runawayattempts++;
+                        }
+                    }
                     PlaySound(AudioClipRegistry.GetSound("menuconfirm"));
                     break;
 

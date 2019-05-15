@@ -68,20 +68,27 @@ public class GlobalControls : MonoBehaviour {
              && LuaScriptBinder.GetAlMighty(null, "CYFPerfectFullscreen").Type.ToString() == "Boolean")
                 perfectFullscreen = LuaScriptBinder.GetAlMighty(null, "CYFPerfectFullscreen").Boolean;
             
+            // check if window scale has a stored preference that is a number
+            if (LuaScriptBinder.GetAlMighty(null, "CYFWindowScale") != null
+             && LuaScriptBinder.GetAlMighty(null, "CYFWindowScale").Type.ToString() == "Number")
+                windowScale = (int)LuaScriptBinder.GetAlMighty(null, "CYFWindowScale").Number;
+            
             awakened = true;
         }
     }
     
-    // blurless fullscreen variables
+    // resolution variables
     public static bool perfectFullscreen = true;
     public static int fullscreenSwitch = 0;
+    
+    public static int windowScale = 1;
     
     #if UNITY_STANDALONE_WIN
         static IEnumerator RepositionWindow() {
             yield return new WaitForEndOfFrame();
             
             try {
-                Misc.MoveWindowTo((int)(Screen.currentResolution.width/2 - 320), (int)(Screen.currentResolution.height/2 - 240));
+                Misc.MoveWindowTo((int)(Screen.currentResolution.width/2 - (Screen.width/2)), (int)(Screen.currentResolution.height/2 - (Screen.height/2)));
             } catch {}
         }
     #endif
@@ -89,11 +96,11 @@ public class GlobalControls : MonoBehaviour {
     public static void SetFullScreen(bool fullscreen, int newSwitch = 1) {
         if (perfectFullscreen) {
             if (!fullscreen)
-                Screen.SetResolution(640, 480, false, 0);
+                Screen.SetResolution(640 * windowScale, 480 * windowScale, false, 0);
             else
                 Screen.SetResolution(Screen.currentResolution.width, Screen.currentResolution.height, true, 0);
         } else
-            Screen.SetResolution(640, 480, fullscreen, 0);
+            Screen.SetResolution(640 * windowScale, 480 * windowScale, fullscreen, 0);
         
         fullscreenSwitch = newSwitch;
 	}
@@ -136,10 +143,10 @@ public class GlobalControls : MonoBehaviour {
                 GameObject.Find("Text").transform.SetParent(UserDebugger.instance.gameObject.transform);
             UserDebugger.instance.gameObject.SetActive(!UserDebugger.instance.gameObject.activeSelf);
             Camera.main.GetComponent<FPSDisplay>().enabled = !Camera.main.GetComponent<FPSDisplay>().enabled;
-        } else if (isInFight && Input.GetKeyDown(KeyCode.H))
+        } else if (isInFight && Input.GetKeyDown(KeyCode.H) && SceneManager.GetActiveScene().name != "Error" && UserDebugger.instance.gameObject.activeSelf)
             GameObject.Find("Main Camera").GetComponent<ProjectileHitboxRenderer>().enabled = !GameObject.Find("Main Camera").GetComponent<ProjectileHitboxRenderer>().enabled;
         else if (Input.GetKeyDown(KeyCode.Escape) && (canTransOW.Contains(SceneManager.GetActiveScene().name) || isInFight)) {
-            if (isInFight && LuaEnemyEncounter.script.GetVar("unescape").Boolean && SceneManager.GetActiveScene().name == "Battle")
+            if (isInFight && LuaEnemyEncounter.script.GetVar("unescape").Boolean && SceneManager.GetActiveScene().name != "Error")
                 return;
             if (SceneManager.GetActiveScene().name == "Error" && !modDev)
                 return;
@@ -206,6 +213,9 @@ public class GlobalControls : MonoBehaviour {
         while (frameCount < frames) {
             if (stopScreenShake) {
                 tf.position = new Vector3(tf.position.x - totalShift.x, tf.position.y - totalShift.y, tf.position.z);
+                UserDebugger.instance.transform.position = new Vector3(UserDebugger.instance.transform.position.x - totalShift.x,
+                                                                       UserDebugger.instance.transform.position.y - totalShift.y,
+                                                                       UserDebugger.instance.transform.position.z);
                 screenShaking = false;
                 yield break;
             }
@@ -215,8 +225,12 @@ public class GlobalControls : MonoBehaviour {
 
             if (UnitaleUtil.IsOverworld)
                 PlayerOverworld.instance.cameraShift = new Vector2(PlayerOverworld.instance.cameraShift.x + shift.x - totalShift.x, PlayerOverworld.instance.cameraShift.y + shift.y - totalShift.y);
-            else
+            else {
                 tf.position = new Vector3(tf.position.x + shift.x - totalShift.x, tf.position.y + shift.y - totalShift.y, tf.position.z);
+                UserDebugger.instance.transform.position = new Vector3(UserDebugger.instance.transform.position.x + shift.x - totalShift.x,
+                                                                       UserDebugger.instance.transform.position.y + shift.y - totalShift.y,
+                                                                       UserDebugger.instance.transform.position.z);
+            }
             //print(totalShift + " + " + shift + " = " + (totalShift + shift));
             totalShift = shift;
             frameCount++;
@@ -224,6 +238,10 @@ public class GlobalControls : MonoBehaviour {
         }
         screenShaking = false;
         tf.position = new Vector3(tf.position.x - totalShift.x, tf.position.y - totalShift.y, tf.position.z);
+        if (!UnitaleUtil.IsOverworld)
+            UserDebugger.instance.transform.position = new Vector3(UserDebugger.instance.transform.position.x - totalShift.x,
+                                                                   UserDebugger.instance.transform.position.y - totalShift.y,
+                                                                   UserDebugger.instance.transform.position.z);
     }
 
     public void ShakeScreen(float duration, float intensity, bool isIntensityDecreasing) {

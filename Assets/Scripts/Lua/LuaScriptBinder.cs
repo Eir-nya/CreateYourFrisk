@@ -33,6 +33,7 @@ public static class LuaScriptBinder {
         UserData.RegisterType<Letter>();
         UserData.RegisterType<Misc>();
         UserData.RegisterType<LuaTextManager>();
+        UserData.RegisterType<LuaFile>();
         //UserData.RegisterType<Windows>();
         //Overworld
         UserData.RegisterType<LuaEventOW>();
@@ -62,12 +63,12 @@ public static class LuaScriptBinder {
 
         script.Globals["isCYF"] = true;
         script.Globals["safe"] = ControlPanel.instance.Safe;
-        #if UNITY_STANDALONE_WIN || UNITY_EDITOR
+        #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
             script.Globals["windows"] = true;
         #else
             script.Globals["windows"] = false;
         #endif
-        script.Globals["CYFversion"] = "0.6.2.1";
+        script.Globals["CYFversion"] = "0.6.2.2";
         if (!UnitaleUtil.IsOverworld) {
             script.Globals["CreateSprite"] = (Func<string, string, int, DynValue>)SpriteUtil.MakeIngameSprite;
             script.Globals["CreateLayer"] = (Action<string, string, bool>)SpriteUtil.CreateLayer;
@@ -80,6 +81,7 @@ public static class LuaScriptBinder {
             script.Globals["CreateText"] = (Func<Script, DynValue, DynValue, int, string, int, LuaTextManager>)CreateText;
             script.Globals["GetCurrentState"] = (Func<string>)GetState;
             script.Globals["BattleDialog"] = (Action<DynValue>)LuaEnemyEncounter.BattleDialog;
+            script.Globals["BattleDialogue"] = (Action<DynValue>)LuaEnemyEncounter.BattleDialog;
             if (LuaEnemyEncounter.doNotGivePreviousEncounterToSelf)
                 LuaEnemyEncounter.doNotGivePreviousEncounterToSelf = false;
             else
@@ -140,13 +142,14 @@ public static class LuaScriptBinder {
     public static string GetState() {
         try {
             return (UIController.instance.frozenState != UIController.UIState.PAUSE) ? UIController.instance.frozenState.ToString() : UIController.instance.state.ToString();
-            }
-        catch {
+        } catch {
             return "NONE (error)";
         }
     }
 
     public static DynValue Get(Script script, string key) {
+        if (key == null)
+            throw new CYFException("GetRealGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
         if (dict.ContainsKey(key)) {
             // Due to how MoonSharp tables require an owner, we have to create an entirely new table if we want to work with it in other scripts.
             if (dict[key].Type == DataType.Table) {
@@ -161,6 +164,8 @@ public static class LuaScriptBinder {
     }
 
     public static void Set(Script script, string key, DynValue value) {
+        if (key == null)
+            throw new CYFException("SetRealGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
         if (dict.ContainsKey(key))
             dict[key] = value;
         else
@@ -168,6 +173,8 @@ public static class LuaScriptBinder {
     }
 
     public static DynValue GetBattle(Script script, string key) {
+        if (key == null)
+            throw new CYFException("GetGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
         if (battleDict.ContainsKey(key)) {
             // Due to how MoonSharp tables require an owner, we have to create an entirely new table if we want to work with it in other scripts.
             if (battleDict[key].Type == DataType.Table) {
@@ -182,12 +189,16 @@ public static class LuaScriptBinder {
     }
     
     public static void SetBattle(Script script, string key, DynValue value) {
+        if (key == null)
+            throw new CYFException("SetGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
         if (battleDict.ContainsKey(key))
             battleDict.Remove(key);
         battleDict.Add(key, value);
     }
 
     public static DynValue GetAlMighty(Script script, string key) {
+        if (key == null)
+            throw new CYFException("GetAlMightyGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
         if (alMightyDict.ContainsKey(key)) {
             // Due to how MoonSharp tables require an owner, we have to create an entirely new table if we want to work with it in other scripts.
             if (alMightyDict[key].Type == DataType.Table) {
@@ -203,6 +214,8 @@ public static class LuaScriptBinder {
 
     public static void SetAlMighty(Script script, string key, DynValue value) { SetAlMighty(script, key, value, true); }
     public static void SetAlMighty(Script script, string key, DynValue value, bool reload) {
+        if (key == null)
+            throw new CYFException("SetAlMightyGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
         if (alMightyDict.ContainsKey(key))
             alMightyDict.Remove(key);
         alMightyDict.Add(key, value);
@@ -242,6 +255,7 @@ public static class LuaScriptBinder {
         UserData.RegisterType<Letter>();
         UserData.RegisterType<Misc>();
         UserData.RegisterType<LuaTextManager>();
+        UserData.RegisterType<LuaFile>();
         //UserData.RegisterType<Windows>();
         //Overworld
         UserData.RegisterType<LuaEventOW>();
@@ -357,7 +371,9 @@ public static class LuaScriptBinder {
                 break;
             }
         }
-        luatm.layer = layer;
+        // Layers don't exist in the overworld, so we don't set it
+        if (!UnitaleUtil.IsOverworld)
+            luatm.layer = layer;
         luatm.textMaxWidth = textWidth;
         luatm.bubbleHeight = bubbleHeight;
         luatm.ShowBubble();
