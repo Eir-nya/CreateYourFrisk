@@ -1,97 +1,65 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
-using MoonSharp.Interpreter;
-using System;
 using System.Collections;
 
 /// <summary>
 /// Attached to the disclaimer screen so you can skip it.
 /// </summary>
 public class DisclaimerScript : MonoBehaviour {
-    private static bool initial = false;
-    
+    public GameObject Logo, LogoCrate, RedditPlug, LegalStuff, ModSelection, Overworld, LuaKnowledgeDisclaimer, Version;
+
     private void Start() {
-        if (!initial) {
-            StaticInits.Start();
-            SaveLoad.Start();
-            new ControlPanel();
-            new PlayerCharacter();
-            #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-                if (GlobalControls.crate)  Misc.WindowName = ControlPanel.instance.WinodwBsaisNmae;
-                else                       Misc.WindowName = ControlPanel.instance.WindowBasisName;
-            #endif
-            SaveLoad.LoadAlMighty();
-            LuaScriptBinder.Set(null, "ModFolder", DynValue.NewString("@Title"));
-            
-            UnitaleUtil.AddKeysToMapCorrespondanceList();
-            
-            initial = true;
-        }
-        
-        if (LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk") != null) 
-            if (LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk").Boolean) {
-                GameObject.Find("Image").GetComponent<Image>().enabled = false;
-                GameObject.Find("Image (1)").GetComponent<Image>().enabled = true;
-                /*GameObject.Find("Description").GetComponent<Text>().text = "CRATE YOUR FRISK IS A FERE AND SUPER KEWL EJNINE!!!!1!!\n" +
-                                                                           "GO ON WWW.REDIDT.CMO/R/UNITLAE. FOR UPDTAES!!!!!\n" +
-                                                                           "NO RELESLING HERE!!! IT'S RFEE!!!\n" +
-                                                                           "OR TUBY FEX WILL BE ANGER!!!\n\n" +
-                                                                           "U'LL HVAE A BED TMIE!!!";
-                GameObject.Find("Description (1)").GetComponent<Text>().text = "NU FEAUTRES IN EXAMPLES MODS!!!!! CHEKC IT OTU!!!!!\n" +
-                                                                               "REALLY!!!\n" +
-                                                                               "IF U DAD A # IN AN ECNOUNTRE NAME IT'LL NTO BE CHOSE NI\n" +
-                                                                               "ENCONUTERS ON THE PAMS!!!! SO COLO!!!";*/
-                GameObject.Find("Description").GetComponent<Text>().text = "GO TO /R/UNITLAE. FOR UPDTAES!!!!!";
-                GameObject.Find("Description (1)").GetComponent<Text>().text = "NO RELESLING HERE!!! IT'S RFEE!!! " +
-                                                                               "OR TUBY FEX WILL BE ANGER!!! " +
-                                                                               "U'LL HVAE A BED TMIE!!!";
-                GameObject.Find("Description (2)").GetComponent<Text>().text = "SPACE OR KLIK TO\n<color='#ff0000'>PALY MODS!!!!!</color>";
-                GameObject.Find("Description (3)").GetComponent<Text>().text = "PRSES O TO\n<color='#ffff00'>OOVERWURL!!!!!</color>";
-                GameObject.Find("Description (4)").GetComponent<Text>().text = "<b><color='red'>KNOW YUOR CODE</color> R U'LL HVAE A BED TMIE!!!</b>";
-            }
+        if (GlobalControls.crate) {
+            Logo.GetComponent<Image>().enabled = false;
+            LogoCrate.GetComponent<Image>().enabled = true;
+            RedditPlug.GetComponent<Text>().text = "GO TO /R/UNITLAE. FOR UPDTAES!!!!!";
+            LegalStuff.GetComponent<Text>().text = "NO RELESLING HERE!!! IT'S RFEE!!! OR TUBY FEX WILL BE ANGER!!! U'LL HVAE A BED TMIE!!!";
+            ModSelection.GetComponent<Text>().text = "SPACE OR KLIK TO\n<color='#ff0000'>PALY MODS!!!!!</color>";
+            Overworld.GetComponent<Text>().text = "PRSES O TO\n<color='#ffff00'>OOVERWURL!!!!!</color>";
+            LuaKnowledgeDisclaimer.GetComponent<Text>().text = "<b><color='red'>KNOW YUOR CODE</color> R U'LL HVAE A BED TMIE!!!</b>";
+            Version.GetComponent<Text>().text = "v" + Random.Range(0,9) + "." + Random.Range(0,9) + "." + Random.Range(0,9);
+        } else if (Random.Range(0, 1000) == 021) {
+            Logo.GetComponent<Image>().enabled              = false;
+            Version.GetComponent<Transform>().localPosition = new Vector3(0f, 160f, 0f);
+            Version.GetComponent<Text>().color              = new Color(1f, 1f, 1f, 1f);
+            Version.GetComponent<Text>().text               = "Not Unitale v0.2.1a";
+        } else if (GlobalControls.BetaVersion > 0)
+            Version.GetComponent<Text>().text = "v" + GlobalControls.CYFversion + "\nLTS " + (GlobalControls.LTSversion + 1) + "\n<color=\"#00ff00\">b" + GlobalControls.BetaVersion + "</color>";
+        else
+            Version.GetComponent<Text>().text = "v" + GlobalControls.CYFversion + "\nLTS " + GlobalControls.LTSversion;
     }
 
     /// <summary>
     /// Checks if you pressed one of the things the disclaimer tells you to. It's pretty straightforward.
     /// </summary>
     private void Update() {
-        // try to hook on to the game window when the user interacts
+        // Try to hook on to the game window when the user interacts
         #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-            if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.O)
-              || (Input.GetKeyDown(KeyCode.F4)        // F4
-              || (Input.GetKeyDown(KeyCode.Return)
-              &&(Input.GetKey(KeyCode.LeftAlt)        // LAlt  + Enter
-              || Input.GetKey(KeyCode.RightAlt)))))   // RAlt  + Enter
+            if (Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.O) || Input.GetKeyDown(KeyCode.F4)
+             || Input.GetKeyDown(KeyCode.Return) && (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)))  // LAlt/RAlt + Enter
                 Misc.RetargetWindow();
         #endif
-        
+
+        if (!ScreenResolution.hasInitialized) return;
         if (Input.GetKeyDown(KeyCode.O)) {
-            StaticInits.MODFOLDER = StaticInits.EDITOR_MODFOLDER;
-            StaticInits.Initialized = false;
-            StaticInits.InitAll();
+            StaticInits.InitAll(StaticInits.EDITOR_MODFOLDER);
             GlobalControls.modDev = false;
             SceneManager.LoadScene("Intro");
             Destroy(this);
-        } else if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Return)) {
-            /*GlobalControls.modDev = true;
-            SceneManager.LoadScene("ModSelect");*/
+        } else if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.Return))
             StartCoroutine(ModSelect());
-        }
     }
-    
+
     // The mod select screen can take some extra time to load,
     // because it now searches for encounter files on top of mods.
     // To compensate, this function will add "Loading" text to the Disclaimer screen
     // whenever it's time to go to the mod select menu.
-    IEnumerator ModSelect() {
-        // if (LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk") != null && LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk").Boolean)
-        if (GlobalControls.crate)
-            GameObject.Find("Description (4)").GetComponent<Text>().text = "LAODING MODS!!!!!";
-        else
-            GameObject.Find("Description (4)").GetComponent<Text>().text = "Loading mods...";
+    private IEnumerator ModSelect() {
+        LuaKnowledgeDisclaimer.GetComponent<Text>().text = GlobalControls.crate ? "LAODING MODS!!!!!" : "Loading mods...";
         yield return new WaitForEndOfFrame();
         GlobalControls.modDev = true;
+        DiscordControls.StartModSelect(false);
         SceneManager.LoadScene("ModSelect");
     }
 }

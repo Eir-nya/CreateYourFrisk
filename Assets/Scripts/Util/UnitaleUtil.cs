@@ -2,18 +2,17 @@
 using UnityEngine.SceneManagement;
 using MoonSharp.Interpreter;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Reflection;
+using System.Text.RegularExpressions;
+using UnityEngine.UI;
+using Object = UnityEngine.Object;
 
 /// <summary>
 /// Utility class for the Unitale engine.
 /// </summary>
 public static class UnitaleUtil {
-    internal static bool firstErrorShown = false; //Keeps track of whether an error already appeared, prevents subsequent errors from overriding the source.
+    internal static bool firstErrorShown; //Keeps track of whether an error already appeared, prevents subsequent errors from overriding the source.
     public static string printDebuggerBeforeInit = "";
     /*internal static string fileName = Application.dataPath + "/Logs/log-" + DateTime.Now.ToString().Replace('/', '-').Replace(':', '-') + ".txt";
     internal static StreamWriter sr;
@@ -34,6 +33,15 @@ public static class UnitaleUtil {
             //Debug.Log("Couldn't write on the log:\n" + e.Message + "\nMessage: " + mess);
             printDebuggerBeforeInit += (printDebuggerBeforeInit == "" ? "" : "\n") + mess;
         }
+    }
+
+    public static void Warn(string line, bool show = true) {
+        line = "[WARN]" + line;
+        if (!GlobalControls.retroMode && show) {
+            WriteInLogAndDebugger(line);
+            return;
+        }
+        try { UserDebugger.instance.Warn(line); } catch { printDebuggerBeforeInit += (printDebuggerBeforeInit == "" ? "" : "\n") + line; }
     }
 
     /*/// <summary>
@@ -73,22 +81,59 @@ public static class UnitaleUtil {
     /// </summary>
     /// <param name="source">Name of the script that caused the error.</param>
     /// <param name="decoratedMessage">Error that was thrown. In MoonSharp's case, this is the DecoratedMessage property from its InterpreterExceptions.</param>
-    public static void DisplayLuaError(string source, string decoratedMessage) {
+    /// <param name="DoNotDecorateMessage">Set to true to hide "error in script x" at the top. This arg is true when using error(..., 0).</param>
+    public static void DisplayLuaError(string source, string decoratedMessage, bool DoNotDecorateMessage = false) {
         if (firstErrorShown)
             return;
         firstErrorShown = true;
-        ErrorDisplay.Message = "error in script " + source + "\n\n" + decoratedMessage;
-        if (Application.isEditor)
-            SceneManager.LoadSceneAsync("Error"); // prevents editor from crashing
-        else
-            SceneManager.LoadScene("Error");
+        ScreenResolution.ResetAfterBattle();
+        ErrorDisplay.Message = (!DoNotDecorateMessage ? "error in script " + source + "\n\n" : "") + decoratedMessage;
+        if (Application.isEditor) SceneManager.LoadSceneAsync("Error"); // prevents editor from crashing
+        else                      SceneManager.LoadScene("Error");
         Debug.Log("It's a Lua error! : " + ErrorDisplay.Message);
+        ScreenResolution.wideFullscreen = true;
+    }
+
+    /// <summary>
+    /// Handles most CYF errors related to script execution
+    /// </summary>
+    /// <param name="scriptname">Name of the script, used for the error message</param>
+    /// <param name="function">Name of the function, used for the error message</param>
+    /// <param name="e">Exception to handle</param>
+    public static void HandleError(string scriptname, string function, Exception e) {
+        if (e as InterpreterException != null) {
+            InterpreterException ie = e as InterpreterException;
+            DisplayLuaError(scriptname, ie.DecoratedMessage == null ? ie.Message : FormatErrorSource(ie.DecoratedMessage, ie.Message) + ie.Message, ie.DoNotDecorateMessage);
+        } else if (GlobalControls.retroMode)
+            return;
+        else if (e.GetType().ToString() == "System.IndexOutOfRangeException" && e.StackTrace.Contains("at MoonSharp.Interpreter.DataStructs.FastStack`1[MoonSharp.Interpreter.DynValue].Push"))
+            DisplayLuaError(scriptname + ", calling the function " + function, "<b>Possible infinite loop</b>\n\nThis is a " + e.GetType() + " error."
+                                                                             + "\n\nYou almost definitely have an infinite loop in your code. A function tried to call itself infinitely. It could be a normal function or a metatable function."
+                                                                             + "\n\nFull stracktrace (see CYF output log at <b>" + Application.persistentDataPath + "/output_log.txt</b>):"
+                                                                             + "\n" + e.StackTrace);
+        else
+            DisplayLuaError(scriptname + ", calling the function " + function, "This is a " + e.GetType() + " error. Contact a dev and show them this screen, this must be an engine-side error."
+                                                                             + "\n\n" + e.Message
+                                                                             + "\n\nFull stracktrace (see CYF output log at <b>" + Application.persistentDataPath + "/output_log.txt</b>):"
+                                                                             + "\n" + e.StackTrace + "\n");
+    }
+
+    public static string FormatErrorSource(string DecoratedMessage, string message) {
+        string source = DecoratedMessage.Substring(0, DecoratedMessage.Length - message.Length);
+        Regex validator = new Regex(@"\(\d+,\d+(-[\d,]+)?\)"); //Finds `(13,9-16)` or `(13,9-14,10)` or `(20,0)`
+        Match scanned = validator.Match(source);
+        if (!scanned.Success) return source;
+        string stacktrace = scanned.Value;
+        validator = new Regex(@"(\d+),(\d+)"); //Finds `13,9`
+        MatchCollection matches = validator.Matches(stacktrace);
+
+        //Add "line " and "char " before some numbers
+        return matches.Cast<Match>().Aggregate(source, (current, match) => current.Replace(match.Value, "line " + match.Groups[1].Value + ", char " + match.Groups[2].Value));
     }
 
     public static AudioSource GetCurrentOverworldAudio() {
         //if (GameObject.Find("Main Camera OW") && Camera.main != GameObject.Find("Main Camera OW")) return GameObject.Find("Main Camera OW").GetComponent<AudioSource>();
-        if (GameObject.Find("Background").GetComponent<MapInfos>().isMusicKeptBetweenBattles)      return PlayerOverworld.audioKept;
-        else                                                                                       return Camera.main.GetComponent<AudioSource>();
+        return GameObject.Find("Background").GetComponent<MapInfos>().isMusicKeptBetweenBattles ? PlayerOverworld.audioKept : Camera.main.GetComponent<AudioSource>();
     }
 
     public static Vector3 VectToVector(GameState.Vect v)    { return new Vector3(v.x, v.y, v.z); }
@@ -110,16 +155,10 @@ public static class UnitaleUtil {
 
     public static DynValue[] TableToDynValueArray(Table table) {
         DynValue[] array = new DynValue[table.Length];
-        string test = "{ ";
         for (int i = 1; i <= table.Length; i++) {
             DynValue v = table.Get(i);
             array[i - 1] = v;
-            if (v.Type == DataType.Boolean)     test += v.Boolean;
-            else if (v.Type == DataType.Number) test += v.Number;
-            else if (v.Type == DataType.String) test += v.String;
-            if (i < table.Length)               test += ", ";
         }
-        test += " }";
         return array;
     }
 
@@ -130,88 +169,84 @@ public static class UnitaleUtil {
         return table;
     }
 
-    public static float CalcTextWidth(TextManager txtmgr, int fromLetter = -1, int toLetter = -1) {
+    public static string ParseCommandInline(string input, ref int currentChar, bool onlyAcceptExistingCommands = true) {
+        int start = currentChar;
+        currentChar++;
+        string control = ""; int count = 1;
+        for (; currentChar < input.Length; currentChar++) {
+            if (input[currentChar] == '[')
+                count++;
+            else if (input[currentChar] == ']') {
+                count--;
+                if (count == 0) {
+                    if (onlyAcceptExistingCommands && !TextManager.commandList.Contains(control.Split(':')[0]))
+                        break;
+                    return control;
+                }
+            }
+            control += input[currentChar];
+        }
+        currentChar = start;
+        return null;
+    }
+
+    public static float CalcTextWidth(TextManager txtmgr, int fromLetter = -1, int toLetter = -1, bool countEOLSpace = false, bool getLastSpace = false) {
         float totalWidth = 0, totalWidthSpaceTest = 0, totalMaxWidth = 0, hSpacing = txtmgr.Charset.CharSpacing;
         if (fromLetter == -1)                                                                                       fromLetter = 0;
         if (txtmgr.textQueue == null)                                                                               return 0;
         if (txtmgr.textQueue[txtmgr.currentLine] == null)                                                           return 0;
-        if (toLetter == -1)                                                                                         toLetter = txtmgr.textQueue[txtmgr.currentLine].Text.Length;
+        if (toLetter == -1)                                                                                         toLetter = txtmgr.textQueue[txtmgr.currentLine].Text.Length - 1;
         if (fromLetter > toLetter || fromLetter < 0 || toLetter > txtmgr.textQueue[txtmgr.currentLine].Text.Length) return -1;
-        if (fromLetter == toLetter)                                                                                 return 0;
 
-        for (int i = fromLetter; i < toLetter; i++) {
+        for (int i = fromLetter; i <= toLetter; i++) {
             switch (txtmgr.textQueue[txtmgr.currentLine].Text[i]) {
                 case '[':
-                    string str = "";
-                    bool failSafe = false;
-                    for (int j = i + 1; j < txtmgr.textQueue[txtmgr.currentLine].Text.Length; j++) {
-                        if (txtmgr.textQueue[txtmgr.currentLine].Text[j] == ']') {
-                            i = j + 1;
-                            break;
-                        }
-                        str += txtmgr.textQueue[txtmgr.currentLine].Text[j];
-                        
-                        // unclosed [ has been detected
-                        if (j == txtmgr.textQueue[txtmgr.currentLine].Text.Length - 1) {
-                            failSafe = true;
-                            break;
-                        }
-                    }
-                    
-                    // used to protect against unclosed open brackets
-                    if (failSafe)
-                        break;
-                    
-                    i--;
-                    if (str.Split(':')[0] == "charspacing")
-                        hSpacing = ParseUtil.GetFloat(str.Split(':')[1]);
+                    string str = ParseCommandInline(txtmgr.textQueue[txtmgr.currentLine].Text, ref i);
+                    if (str == null) {
+                        if (txtmgr.Charset.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i]))
+                            totalWidth += txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.x + hSpacing;
+                    } else if (str.Split(':')[0] == "charspacing")
+                        hSpacing = str.Split(':')[1].ToLower() == "default" ? txtmgr.Charset.CharSpacing : ParseUtil.GetFloat(str.Split(':')[1]);
                     break;
                 case '\r':
                 case '\n':
-                    if (totalMaxWidth < totalWidthSpaceTest - hSpacing)
-                        totalMaxWidth = totalWidthSpaceTest - hSpacing;
+                    totalMaxWidth = Mathf.Max(totalMaxWidth, totalWidthSpaceTest - hSpacing);
                     totalWidth = 0;
                     totalWidthSpaceTest = 0;
                     break;
                 default:
                     if (txtmgr.Charset.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i])) {
                         totalWidth += txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.x + hSpacing;
-                        //Do not count end of line spaces
-                        if (txtmgr.textQueue[txtmgr.currentLine].Text[i] != ' ')
+                        // Do not count end of line spaces
+                        if (txtmgr.textQueue[txtmgr.currentLine].Text[i] != ' ' || countEOLSpace)
                             totalWidthSpaceTest = totalWidth;
                     }
                     break;
             }
         }
-        if (totalMaxWidth < totalWidthSpaceTest - hSpacing)
-            totalMaxWidth = totalWidthSpaceTest - hSpacing;
-        return totalMaxWidth;
+        totalMaxWidth = Mathf.Max(totalMaxWidth, totalWidthSpaceTest - hSpacing);
+        return Mathf.Max(totalMaxWidth + (getLastSpace ? hSpacing : 0), 0);
     }
 
     public static float CalcTextHeight(TextManager txtmgr, int fromLetter = -1, int toLetter = -1) {
-        float maxY = -999, minY = 999;
+        float maxY = Mathf.NegativeInfinity, minY = Mathf.Infinity;
+
         if (fromLetter == -1) fromLetter = 0;
         if (toLetter == -1)   toLetter = txtmgr.textQueue[txtmgr.currentLine].Text.Length;
         if (fromLetter > toLetter || fromLetter < 0 || toLetter > txtmgr.textQueue[txtmgr.currentLine].Text.Length) return -1;
         if (fromLetter == toLetter)                                                                                 return 0;
-        for (int i = fromLetter; i < toLetter; i++) {
-            if (txtmgr.Charset.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i])) {
-                if (txtmgr.letterPositions[i].y < minY) {
-                    //Debug.Log("minY change: going from " + minY + " to " + txtmgr.letterPositions[i].y);
-                    minY = txtmgr.letterPositions[i].y;
-                }
-                if (txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.y > maxY) {
-                    //Debug.Log("maxY change: going from " + maxY + " to " + (txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.y));
-                    maxY = txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.y;
-                }
-            }
+
+        for (int i = 0; i < txtmgr.letters.Count; i++) {
+            TextManager.LetterData l = txtmgr.letters[i];
+            if (l.index < fromLetter || l.index > toLetter) continue;
+            minY = Mathf.Min(minY, l.position.y);
+            maxY = Mathf.Max(maxY, l.position.y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[l.index]].textureRect.size.y);
         }
-        //Debug.Log("The final height is " + (maxY - minY));
-        return maxY - minY;
+        return Mathf.Max(maxY - minY, 0);
     }
 
     public static DynValue RebuildTableFromString(string text) {
-        text.Trim();
+        text = text.Trim();
         if (text[0] != '{' || text[text.Length-1] != '}') {
             Debug.LogError("RebuildTableFromString: The value given is not a reconstructible table!");
             return DynValue.Nil;
@@ -227,52 +262,60 @@ public static class UnitaleUtil {
         DynValue valueName = null;
 
         bool inString = false, inSlashEffect1 = false, inSlashEffect2 = false;
-        for (int i = 0; i < text.Length; i ++) {
+        foreach (char c in text) {
             if (inSlashEffect1)      inSlashEffect1 = false;
             else if (inSlashEffect2) inSlashEffect2 = false;
 
             if (!inSlashEffect2) {
-                if (text[i] == '{' && !inString) {
+                if (c == '{' && !inString) {
                     if (inOtherTable != 1)
-                        currentValue += text[i];
+                        currentValue += c;
                     inOtherTable++;
-                } else if (text[i] == '}' && !inString) {
+                } else if (c == '}' && !inString) {
                     inOtherTable--;
                     if (inOtherTable == 0) {
                         if (valueName == null) t.Append(DynValue.NewTable(ConstructTable(currentValue)));
                         else                   t.Set(valueName, DynValue.NewTable(ConstructTable(currentValue)));
                         currentValue = "";
-                        valueName = null;
+                        valueName    = null;
                     } else
-                        currentValue += text[i];
-                } else if (text[i] == '"' && inOtherTable != 0)
+                        currentValue += c;
+                } else if (c == '"' && inOtherTable != 0)
                     inString = !inString;
-                else if (text[i] == '\\') {
+                else if (c == '\\') {
                     inSlashEffect1 = true;
                     inSlashEffect2 = true;
-                } else if (text[i] == ',' && (!inString || inOtherTable != 0)) {
+                } else if (c == ',' && (!inString || inOtherTable != 0)) {
                     currentValue = currentValue.Trim();
-                    Type type = CheckRealType(currentValue);
+                    Type     type = CheckRealType(currentValue);
                     DynValue dv;
-                    if (type == typeof(bool))       dv = DynValue.NewBoolean(currentValue == "true");
-                    else if (type == typeof(float)) dv = DynValue.NewNumber(ParseUtil.GetFloat(currentValue));
-                    else                            dv = DynValue.NewString(currentValue.Trim('"'));
+                    if (type      == typeof(bool))       dv = DynValue.NewBoolean(currentValue == "true");
+                    else if (type == typeof(float)) dv      = DynValue.NewNumber(ParseUtil.GetFloat(currentValue));
+                    else                            dv      = DynValue.NewString(currentValue.Trim('"'));
                     if (valueName == null) t.Append(dv);
                     else                   t.Set(valueName, dv);
-                    valueName = null;
+                    valueName    = null;
                     currentValue = "";
-                } else if (text[i] == '=' && (!inString || inOtherTable != 0)) {
+                } else if (c == '=' && (!inString || inOtherTable != 0)) {
                     currentValue = currentValue.Trim();
-                    valueName = DynValue.NewString(currentValue);
                     Type type = CheckRealType(currentValue);
                     if (type == typeof(bool))       valueName = DynValue.NewBoolean(currentValue == "true");
                     else if (type == typeof(float)) valueName = DynValue.NewNumber(ParseUtil.GetFloat(currentValue));
                     else                            valueName = DynValue.NewString(currentValue.Trim('"'));
                 } else
-                    currentValue += text[i];
+                    currentValue += c;
             } else
-                currentValue += text[i];
+                currentValue += c;
         }
+
+        // Parse one final time for the end of the string
+        Type typey = CheckRealType(currentValue);
+        DynValue dynv;
+        if (typey == typeof(bool))       dynv = DynValue.NewBoolean(currentValue == "true");
+        else if (typey == typeof(float)) dynv = DynValue.NewNumber(ParseUtil.GetFloat(currentValue));
+        else                            dynv = DynValue.NewString(currentValue.Trim('"'));
+        if (valueName == null) t.Append(dynv);
+        else                   t.Set(valueName, dynv);
 
         return t;
     }
@@ -292,19 +335,30 @@ public static class UnitaleUtil {
                 tempArray.Add(str.Substring(lastIndex, i - lastIndex).Trim());
                 lastIndex = i + 1;
             }
-            if (countTables)
-                if (str[i] == '}' && tableStack > 0)
-                    tableStack--;
+            if (!countTables) continue;
+            if (str[i] == '}' && tableStack > 0)
+                tableStack--;
         }
         tempArray.Add(str.Substring(lastIndex, str.Length - lastIndex).Trim());
         return (string[])ListToArray(tempArray);
     }
 
+    public static void Dust(GameObject go, LuaSpriteController spr) {
+        if (go.GetComponent<ParticleDuplicator>() == null)
+            go.AddComponent<ParticleDuplicator>();
+
+        // Move it to the nearest remanent object
+        while (go.transform.parent.GetComponent<CYFSprite>() && go.transform.parent.GetComponent<CYFSprite>().ctrl.limbo)
+            go.transform.SetParent(go.transform.parent.parent);
+
+        go.GetComponent<ParticleDuplicator>().Activate(spr);
+    }
+
     /// <summary>
-    /// Check DynValues parameter's value types. DON'T WORK WITH MULTIDIMENSIONNAL ARRAYS!
+    /// Check DynValues parameter's value types. DOESN'T WORK WITH MULTIDIMENSIONNAL ARRAYS!
     /// (For now it doesn't work with arrays at all :c)
     /// </summary>
-    /// <param name="parameters"></param>
+    /// <param name="parameter"></param>
     /// <returns></returns>
     public static Type CheckRealType(string parameter) {
         string parameterNoSpace = parameter.Replace(" ", "");
@@ -315,19 +369,12 @@ public static class UnitaleUtil {
             return typeof(bool);
 
         //Number (here float)
-        bool isNumber = true;
+        bool isNumber = parameterNoSpace.All(c => c == '0' || c == '1' || c == '2' || c == '3' || c == '4' || c == '5' || c == '6' || c == '7' || c == '8' || c == '9' || c == '.' || c == ',' || c == ' ' || c == '-');
         //If each parameter is a number, a dot, a space or a minus, this is a number
-        foreach (char c in parameterNoSpace)
-            if (c != '0' && c != '1' && c != '2' && c != '3' && c != '4' && c != '5' && c != '6' && c != '7' && c != '8' && c != '9' && c != '.' && c != ',' && c != ' ' && c != '-') {
-                isNumber = false;
-                break;
-            }
-        if (isNumber)
-            return typeof(float);
+        return isNumber ? typeof(float) : typeof(string);
 
         //String
         //If all our attempts to check other types failed, this is really a string
-        return typeof(string);
     }
 
     public static float CropDecimal(float number) {
@@ -350,9 +397,9 @@ public static class UnitaleUtil {
                 } else if ((Mathf.Floor(number) != 0 && zeromode) || (Mathf.Floor(number) != 9 && ninemode))
                     something = true;
             } else {
-                if (Mathf.Floor(number) == 0 )      { zerocount++;   ninecount = 0; }
-                else if (Mathf.Floor(number) == 9 ) { ninecount++;   zerocount = 0; } 
-                else                                { ninecount = 0; zerocount = 0; }
+                if (Mathf.Floor(number) == 0)      { zerocount++;   ninecount = 0; }
+                else if (Mathf.Floor(number) == 9) { ninecount++;   zerocount = 0; }
+                else                               { ninecount = 0; zerocount = 0; }
             }
             dec++;
             number %= 1;
@@ -364,8 +411,11 @@ public static class UnitaleUtil {
         return dec;
     }
 
+    public static bool TestContainsListVector2(List<Vector2> list, int testValue) {
+        return list.Any(v => v.x == testValue);
+    }
+
     public static void PlaySound(string basis, string sound, float volume = 0.65f) {
-        sound = FileLoader.getRelativePathWithoutExtension(sound).Replace('\\', '/');
         for (int i = 1; i > 0; i++) {
             object audio = NewMusicManager.audiolist[basis + i];
             if (audio != null) {
@@ -384,41 +434,76 @@ public static class UnitaleUtil {
         }
     }
 
-    public static void PlaySound(string basis, AudioClip sound, float volume = 0.65f) { PlaySound(basis, sound.name, volume); }
+    public static void PlayVoice(string basis, string voice, float volume = 0.65f) { PlaySound(basis, "Voices/" + voice, volume); }
 
-    public static bool TestPP(Color32[] playerMatrix, Color32[] bulletMatrix, float rotation, int playerHeight, int bulletHeight, Vector2 scale, Vector2 fromCenterProjectile, float spriteAlpha) {
+    /// <summary>
+    /// Checks if the Player and a given bullet collide.
+    /// TODO: Extend this function so it can handle two different random objects, instead of forcing one of them to be the Player.
+    /// </summary>
+    /// <param name="playerMatrix">List of pixels depicting the Player's hitbox. Currently is 8x8 with no transparent pixel.</param>
+    /// <param name="bulletMatrix">List of pixels depicting the bullet's sprite.</param>
+    /// <param name="rotation">Difference between the bullet's rotation and the Player's rotation.</param>
+    /// <param name="playerHeight">Height of the Player's hitbox. Currently always 8.</param>
+    /// <param name="bulletHeight">Height of the bullet's sprite.</param>
+    /// <param name="scale">Scale difference between the bullet and the Player.</param>
+    /// <param name="fromCenterProjectile">Position difference between the two objects.</param>
+    /// <returns>True if the two objects collide, false otherwise.</returns>
+    public static bool TestPP(Color32[] playerMatrix, Color32[] bulletMatrix, float rotation, int playerHeight, int bulletHeight, Vector2 scale, Vector2 fromCenterProjectile) {
+        // Get the bullet's and Player's widths
         int bulletWidth = bulletMatrix.Length / bulletHeight, playerWidth = playerMatrix.Length / playerHeight;
+        // As rotation is given in degrees, transform it into a value in radians
         rotation *= Mathf.Deg2Rad;
-        Vector2 start = new Vector2();
-        Vector2 xDiff = new Vector2();
-        Vector2 yDiff = new Vector2();
+        // Setup vectors to store the starting point and vertical and horizontal distance between the bullet's pixels
+        Vector2 start = new Vector2(), xDiff = new Vector2(), yDiff = new Vector2();
+
+        // For each pixel in the Player's hitbox...
         for (int currentHeight = 0; currentHeight < playerHeight && currentHeight >= 0; currentHeight ++)
             for (int currentWidth = 0; currentWidth < playerWidth && currentWidth >= 0; currentWidth ++) {
-                int totalValX, totalValY;
-                if (currentWidth > 1 || currentHeight > 1 || (currentWidth != 0 && currentHeight != 0)) {
-                    totalValX = Mathf.RoundToInt(start.x + xDiff.x * currentWidth + yDiff.x * currentHeight);
-                    totalValY = Mathf.RoundToInt(start.y + xDiff.y * currentWidth + yDiff.y * currentHeight);
-                } else {
+                int roundedValX, roundedValY;
+
+                // Three times: (0, 0), (1, 0) and (0, 1)
+                if ((currentWidth == 0 && currentHeight < 2) || (currentWidth < 2 && currentHeight == 0)) {
+                    // Compute the horizontal and vertical distance between the two objects
                     float dx = currentWidth + fromCenterProjectile.x,
                           dy = currentHeight + fromCenterProjectile.y;
                     if (scale.x < 0) dx = -dx;
                     if (scale.y < 0) dy = -dy;
 
+                    // Compute the distance between the center of the two objects
                     float DFromCenter = Mathf.Sqrt(Mathf.Pow(dx, 2) + Mathf.Pow(dy, 2)),
+                    // Compute the angle between the two objects
                           angle = Mathf.Atan2(dy, dx) - rotation,
-                          fullValX = bulletWidth  / 2 + (Mathf.Cos(angle) * DFromCenter) / Mathf.Abs(scale.x),
-                          fullValY = bulletHeight / 2 + (Mathf.Sin(angle) * DFromCenter) / Mathf.Abs(scale.y);
-                    totalValX = Mathf.RoundToInt(fullValX);
-                    totalValY = Mathf.RoundToInt(fullValY);
+                    // Compute the real coordinates of the bullet's pixel relative to the Player's hitbox
+                          fullValX = bulletWidth  / 2f + Mathf.Cos(angle) * DFromCenter / Mathf.Abs(scale.x),
+                          fullValY = bulletHeight / 2f + Mathf.Sin(angle) * DFromCenter / Mathf.Abs(scale.y);
+                    // Get a rounded value for table checks
+                    roundedValX = Mathf.FloorToInt(fullValX);
+                    roundedValY = Mathf.FloorToInt(fullValY);
 
-                    if (currentWidth == 0 && currentHeight == 0)      start = new Vector2(fullValX, fullValY);
-                    else if (currentWidth == 1 && currentHeight == 0) xDiff = new Vector2(fullValX - start.x, fullValY - start.y);
-                    else if (currentWidth == 0 && currentHeight == 1) yDiff = new Vector2(fullValX - start.x, fullValY - start.y);
+                    // Compute the starting point for (0, 0)
+                    if (currentWidth == 0 && currentHeight == 0) start = new Vector2(fullValX, fullValY);
+                    // Compute the distance between two horizontal pixels for (1, 0)
+                    else if (currentHeight == 0)                 xDiff = new Vector2(fullValX - start.x, fullValY - start.y);
+                    // Compute the distance between two vertical pixels for (0, 1)
+                    else                                         yDiff = new Vector2(fullValX - start.x, fullValY - start.y);
+                // Use the distance and starting point we computed above to compute where the current pixel is
+                } else {
+                    roundedValX = Mathf.FloorToInt(start.x + xDiff.x * currentWidth + yDiff.x * currentHeight);
+                    roundedValY = Mathf.FloorToInt(start.y + xDiff.y * currentWidth + yDiff.y * currentHeight);
                 }
-                if (totalValY >= 0 && totalValY < bulletHeight && totalValX >= 0 && totalValX < bulletWidth)
-                    if (bulletMatrix[Mathf.RoundToInt(totalValY * bulletWidth + totalValX)].a != 0)
-                        return true;
+
+                // Don't check the computed bullet's pixel if it doesn't exist, duh
+                int pixelIndex = Mathf.FloorToInt(roundedValY * bulletWidth + roundedValX);
+                if (pixelIndex < 0 || pixelIndex >= bulletMatrix.Length)
+                    continue;
+
+                // If the bullet's pixel's alpha is 0, continue to the next pixel
+                if (bulletMatrix[pixelIndex].a == 0) continue;
+                if (roundedValY >= 0 && roundedValY < bulletHeight && roundedValX >= 0 && roundedValX < bulletWidth)
+                    // All checks are passed: the two objects collide
+                    return true;
             }
+        // After checking all pixels in the Player's hitbox, if we haven't found a colliding pixel, then the two objects don't collide
         return false;
     }
 
@@ -478,7 +563,7 @@ public static class UnitaleUtil {
                 if (currentHeight < coords.w) coords.w = currentHeight; //minVert
             }
         Vector2 offset = new Vector2((coords.x + coords.y) / 2 - width / 2, (coords.z + coords.w) / 2 - height / 2);
-        Rect maxDist = new Rect (tf.position.x - Mathf.Ceil((coords.x - coords.y + 1) / 2) + offset.x, 
+        Rect maxDist = new Rect (tf.position.x - Mathf.Ceil((coords.x - coords.y + 1) / 2) + offset.x,
                                  tf.position.y - Mathf.Ceil((coords.z - coords.w + 1) / 2) + offset.y, coords.x - coords.y + 1, coords.z - coords.w + 1);
         //Rect maxDist = new Rect (tf.position.x, tf.position.y, coords.y - coords.x, coords.w - coords.z);
         //Debug.Log(maxDist);
@@ -490,89 +575,220 @@ public static class UnitaleUtil {
             throw new CYFException("If you want the parent to be null, find the object with GameObject.Find() directly.");
 
         Transform[] children = parent.GetComponentsInChildren<Transform>(getInactive);
-        foreach (Transform go in children)
-            if ((getInactive || (!getInactive && go.gameObject.activeInHierarchy)) && (go.name == name || (isInclusive && go.name.Contains(name))))
-                return go.transform;
-        return null;
+        return (from go in children where (getInactive || go.gameObject.activeInHierarchy) && (go.name == name || isInclusive && go.name.Contains(name)) select go.transform).FirstOrDefault();
     }
 
-    public static Transform[] GetFirstChildren(Transform parent, bool getInactive = false) {
-        Transform[] children, firstChildren;
-        int index = 0;
-        if (parent != null) {
-            children = parent.GetComponentsInChildren<Transform>(getInactive);
-            firstChildren = new Transform[parent.childCount];
-            foreach (Transform child in children)
-                if (child.parent == parent) {
-                    firstChildren[index] = child;
-                    index++;
-                }
-        } else {
-            List<Transform> tfs = new List<Transform>();
-            foreach (Transform tf in Resources.FindObjectsOfTypeAll<Transform>().Where(o => o.hideFlags == HideFlags.None).ToList())
-                if (tf.parent == null)
-                    tfs.Add(tf);
-            firstChildren = new Transform[tfs.Count];
-            foreach (Transform root in tfs)
-                if (getInactive || root.gameObject.activeInHierarchy) {
-                    firstChildren[index] = root;
-                    index++;
-                }
-        }
+    public static List<Transform> GetFirstChildren(Transform parent, bool getInactive = false) {
+        List<Transform> firstChildren = new List<Transform>();
+        firstChildren.AddRange(parent != null ? parent.GetComponentsInChildren<Transform>(getInactive).Where(child => child.parent == parent)
+                                              : Resources.FindObjectsOfTypeAll<Transform>().Where(tf => tf.hideFlags == HideFlags.None && tf.parent == null && (getInactive || tf.gameObject.activeInHierarchy)));
         return firstChildren;
+    }
+
+    public static void RemoveChildren(GameObject go, bool immediate = false, bool firstPass = true) {
+        foreach (Transform t in GetFirstChildren(go.transform, true)) {
+            // Bullet to delete recursively
+            if (t.GetComponent<Projectile>())
+                t.GetComponent<Projectile>().ctrl.Remove();
+            // Sprite to delete recursively
+            else if (t.GetComponent<CYFSprite>())
+                if (immediate) LuaSpriteController.GetOrCreate(t.gameObject).spr.LateUpdate();
+                else           LuaSpriteController.GetOrCreate(t.gameObject).Remove();
+            // Text object to delete
+            else if (t.GetComponentInChildren<LuaTextManager>())
+                t.GetComponentInChildren<LuaTextManager>().Remove();
+            // Dusting object: move it back to a valid parent
+            else if (t.GetComponentInChildren<ParticleSystem>())
+                while (t.parent.GetComponent<CYFSprite>() && (t.parent.GetComponent<CYFSprite>().ctrl.limbo || t.transform.parent.gameObject == go))
+                    t.SetParent(t.parent.parent);
+            // Normally this shouldn't happen, just a failsafe
+            else
+                throw new CYFException("For some reason, it seems you're trying to remove something which is neither a sprite, bullet or text object.");
+        }
+
+        if (firstPass && !immediate)
+            RemoveChildren(go, false, false);
     }
 
     public static Dictionary<string, string> MapCorrespondanceList = new Dictionary<string, string>();
 
     public static void AddKeysToMapCorrespondanceList() {
-        MapCorrespondanceList.Add("test", "Snowdin - The test map");
-        MapCorrespondanceList.Add("test2", "Hotland - The test map");
+        MapCorrespondanceList.Clear();
+        MapCorrespondanceList.Add("test", "Snowdin - Big boy map");
+        MapCorrespondanceList.Add("test2", "Hotland - Crossroads");
         // MapCorrespondanceList.Add("test3", "The Core - The test map");
-        MapCorrespondanceList.Add("test4", "The Core - Parallel universe");
-        MapCorrespondanceList.Add("test5", "Snowdin - Parallax universe");
+        MapCorrespondanceList.Add("test4", "The Core - Bridge");
+        MapCorrespondanceList.Add("test5", "Snowdin - Cooler bridge");
         MapCorrespondanceList.Add("test-1", "How did you find this one?");
         MapCorrespondanceList.Add("Void", "The final map...?");
     }
 
-    /*public static bool CheckAvailableDuster(out GameObject go) {
-        go = null;
-        ParticleSystem[] pss = GameObject.Find("psContainer").GetComponentsInChildren<ParticleSystem>(true);
-        int a = pss.Length;
-        for (int i = 0; i < a; i++) {
-            if (!pss[i].gameObject.activeInHierarchy && pss[i].gameObject.name.Contains("MonsterDuster(Clone)")) {
-                go = pss[i].gameObject;
-                go.SetActive(true);
-                go.transform.SetAsFirstSibling();
-                return true;
+    public static void ResetOW(bool resetSave = false) {
+        EventManager.instance = null;
+        GameState.current = null;
+        ItemBoxUI.active = false;
+        GlobalControls.realName = null;
+        PlayerOverworld.instance = null;
+        PlayerOverworld.audioCurrTime = 0;
+        PlayerOverworld.audioKept = null;
+        if (resetSave)
+            SaveLoad.Load();
+        ShopScript.scriptName = null;
+    }
+
+    public static void ExitOverworld(bool totalUnload = true) {
+        foreach (string str in NewMusicManager.audiolist.Keys)
+            if ((AudioSource)NewMusicManager.audiolist[str] != null && str != "src")
+                Object.Destroy(((AudioSource)NewMusicManager.audiolist[str]).gameObject);
+        NewMusicManager.audiolist.Clear();
+        NewMusicManager.audioname.Clear();
+        Object.Destroy(GameObject.Find("Player"));
+        Object.Destroy(GameObject.Find("Canvas OW"));
+        Object.Destroy(GameObject.Find("Canvas Two"));
+        if (GameOverBehavior.gameOverContainerOw)
+            Object.Destroy(GameOverBehavior.gameOverContainerOw);
+        StaticInits.InitAll("@Title");
+        ResetOW(true);
+        PlayerCharacter.instance.Reset();
+        Inventory.inventory.Clear();
+        Inventory.RemoveAddedItems();
+        ScriptWrapper.instances.Clear();
+        GlobalControls.isInFight = false;
+        GlobalControls.isInShop = false;
+        LuaScriptBinder.ClearBattleVar();
+        LuaScriptBinder.Clear();
+        Object.Destroy(GameObject.Find("Main Camera OW"));
+    }
+
+    public static string TimeFormatter(float time) {
+        float seconds = Mathf.Floor(Mathf.Floor(time));
+        float minutes = Mathf.Floor(seconds / 60);
+        //float hours = Mathf.Floor(minutes / 60);
+        return minutes + ":" + string.Format("{0,2:00}", seconds % 60);
+    }
+
+    public static bool IsSpecialAnnouncement(string str) {
+        return str == "4eab1af3ab6a932c23b3cdb8ef618b1af9c02088";
+    }
+
+    public static bool TryCall(ScriptWrapper script, string func, DynValue param) { return TryCall(script, func, new[] { param }); }
+    public static bool TryCall(ScriptWrapper script, string func, DynValue[] param = null) {
+        DynValue sval = script.GetVar(func);
+        if (sval == null || sval.Type == DataType.Nil) return false;
+        script.Call(func, param);
+        return true;
+    }
+
+    public static int SelectionChoice(int items, int current, int xMov, int yMov, int rows, int columns, bool verticalRollaround = true) {
+        int pageItems = rows * columns;
+        int pageNumber = Mathf.CeilToInt(items / (float)pageItems);
+        int currentPage = current / pageItems;
+        int currentItem = current % pageItems;
+        int lastPageItemNumber = Math.Mod(items - 1, pageItems) + 1;
+        int xPos = currentItem % columns;
+        int yPos = currentItem / columns;
+
+        xPos += xMov;
+        yPos += yMov;
+
+        // Horizontal movement
+        if (xMov != 0) {
+            // Right bound
+            if (xPos >= columns || (currentPage == pageNumber - 1 && xPos >= lastPageItemNumber - yPos * columns)) {
+                xPos = 0;
+                if (verticalRollaround)
+                    currentPage++;
+            }
+            // Left bound
+            if (xPos < 0) {
+                if (currentPage == 0) xPos = Math.Mod(lastPageItemNumber - yPos * columns - 1, columns);
+                else                  xPos = columns - 1;
+                if (verticalRollaround)
+                    currentPage--;
             }
         }
-        return false;
-    }*/
 
-    // ******************************************************************************
-    // *** Warning: Complex System.Reflexion stuff below! Enter at your own risk! *** 
-    // ******************************************************************************
+        // Vertical movement
+        // Down bound
+        if (yPos >= rows || (currentPage == pageNumber - 1 && yPos >= Mathf.CeilToInt((lastPageItemNumber - xPos) / (float)columns))) {
+            yPos = 0;
+            if (!verticalRollaround)
+                currentPage++;
+        }
+        // Up bound
+        if (yPos < 0) {
+            if (currentPage == pageNumber - 1) yPos = Mathf.CeilToInt((lastPageItemNumber - xPos) / (float)columns) - 1;
+            else                               yPos = rows - 1;
+            if (!verticalRollaround)
+                currentPage--;
+        }
 
-    /*/// <summary>
-    /// Complex af
-    /// Used like this: MethodInfo method = MethodOf(() => controller.Method3(default(int)));
-    /// </summary>
-    /// <param name="expression"></param>
-    /// <returns></returns>
-    public static MethodInfo MethodOf(Expression<Action> expression) {
-        return ((MethodCallExpression)expression.Body).Method;
+        // Page underflow
+        while (currentPage < 0)
+            currentPage += pageNumber;
+        // Page overflow
+        while (currentPage >= pageNumber)
+            currentPage -= pageNumber;
+
+        int result = xPos + yPos * columns + currentPage * pageItems;
+        if (result >= items)
+            result = items - 1;
+
+        return result;
     }
 
-    /// <summary>
-    /// Checks if the expression given has the CYFEventFunction attribute I guess
-    /// </summary>
-    /// <param name="expression"></param>
-    /// <returns></returns>
-    public static bool MethodHasCYFEventFunctionAttribute(MethodInfo mf) {
-        const bool includeInherited = false;
-        return mf.GetCustomAttributes(typeof(CYFEventFunction), includeInherited).Any();
+    public static Transform GetTransform(object o) {
+        LuaSpriteController sSelf = o as LuaSpriteController;
+        if (sSelf != null) return sSelf.img.transform;
+        LuaTextManager tSelf = o as LuaTextManager;
+        if (tSelf != null) return tSelf.GetContainer().transform;
+        ProjectileController pSelf = o as ProjectileController;
+        if (pSelf != null) return pSelf.sprite.img.transform;
+        LuaCYFObject oSelf = o as LuaCYFObject;
+        if (oSelf != null) return oSelf.transform;
+        Transform tsSelf = o as Transform;
+        if (tsSelf != null) return tsSelf;
+        return null;
     }
-    private static bool MethodHasCYFEventFunctionAttribute(Expression<Action> expression) {
-        return MethodHasCYFEventFunctionAttribute(MethodOf(expression));
-    }*/
+
+    public static DynValue GetObject(Transform t) {
+        if (t == null)
+            return DynValue.NewNil();
+
+        GameObject go = t.gameObject;
+        if (LuaSpriteController.HasSpriteController(go))
+            return UserData.Create(LuaSpriteController.GetOrCreate(go));
+        if (t.GetComponent<LuaProjectile>() != null)
+            return UserData.Create(t.GetComponent<LuaProjectile>().ctrl);
+        for (int i = 0; i < t.childCount; i++) {
+            Transform child = t.GetChild(i);
+            if (child.GetComponent<LuaTextManager>() != null)
+                return UserData.Create(child.GetComponent<LuaTextManager>());
+        }
+        return UserData.Create(new LuaCYFObject(t));
+    }
+
+    public static DynValue GetObjectParent(Transform t) {
+        return GetObject(t.parent);
+    }
+
+    public static void SetObjectParent(object self, object p) {
+        if (p == null)
+            throw new CYFException("SetParent(): Can't set nil as parent.");
+
+        LuaSpriteController sSelf = self as LuaSpriteController;
+        LuaSpriteController sParent = p as LuaSpriteController;
+
+        if (sSelf != null && sSelf.tag == "event")
+            throw new CYFException("sprite.SetParent(): Cannot set the prent of an overworld event's sprite.");
+        if ((sSelf != null && sSelf.tag == "letter") ^ (sParent != null && sParent.tag == "letter"))
+            throw new CYFException("sprite.SetParent(): Cannot be used between letter sprites and other objects.");
+
+        Transform t = GetTransform(p);
+        if (t == null) {
+            DynValue d = p as DynValue;
+            throw new CYFException("SetParent(): Can't set an object of type " + d.GetType().ToString() + " as a parent!");
+        }
+        GetTransform(self).SetParent(GetTransform(p));
+    }
 }

@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using MoonSharp.Interpreter;
 
 /// <summary>
-/// Class used as a database that is saved and loaded during the game. 
+/// Class used as a database that is saved and loaded during the game.
 /// Is used as the savefile in SaveLoad.
 /// </summary>
 [System.Serializable]
@@ -15,15 +15,16 @@ public class GameState {
     public Hashtable soundDictionary;
     public ControlPanel controlpanel;
     public PlayerCharacter player;
-    public string playerHeader;
     public Dictionary<string, string> playerVariablesStr = new Dictionary<string, string>();
     public Dictionary<string, double> playerVariablesNum = new Dictionary<string, double>();
     public Dictionary<string, bool> playerVariablesBool = new Dictionary<string, bool>();
-    public string lastScene = null;
+    public string lastScene;
     public Dictionary<string, MapData> mapInfos = new Dictionary<string, MapData>();
     public Dictionary<string, TempMapData> tempMapInfos = new Dictionary<string, TempMapData>();
     public List<string> inventory = new List<string>();
     public List<string> boxContents = new List<string>();
+    public float playerTime;
+    public string CYFversion = "";
 
     [System.Serializable]
     public struct EventInfos {
@@ -65,17 +66,18 @@ public class GameState {
     }
 
     public void SaveGameVariables() {
+        CYFversion = GlobalControls.CYFversion;
+
         try {
-            LuaScriptBinder.Set(null, "PlayerPosX", DynValue.NewNumber(GameObject.Find("Player").transform.position.x));
-            LuaScriptBinder.Set(null, "PlayerPosY", DynValue.NewNumber(GameObject.Find("Player").transform.position.y));
-            LuaScriptBinder.Set(null, "PlayerPosZ", DynValue.NewNumber(GameObject.Find("Player").transform.position.z));
+            GameObject Player = GameObject.Find("Player");
+            LuaScriptBinder.Set(null, "PlayerPosX", DynValue.NewNumber(Player.transform.position.x));
+            LuaScriptBinder.Set(null, "PlayerPosY", DynValue.NewNumber(Player.transform.position.y));
+            LuaScriptBinder.Set(null, "PlayerPosZ", DynValue.NewNumber(Player.transform.position.z));
         } catch {
             LuaScriptBinder.Set(null, "PlayerPosX", DynValue.NewNumber(SaveLoad.savedGame.playerVariablesNum["PlayerPosX"]));
             LuaScriptBinder.Set(null, "PlayerPosY", DynValue.NewNumber(SaveLoad.savedGame.playerVariablesNum["PlayerPosY"]));
             LuaScriptBinder.Set(null, "PlayerPosZ", DynValue.NewNumber(SaveLoad.savedGame.playerVariablesNum["PlayerPosZ"]));
         }
-
-        playerHeader = CYFAnimator.specialPlayerHeader;
 
         string mapName;
         if (UnitaleUtil.MapCorrespondanceList.ContainsKey(SceneManager.GetActiveScene().name))                        mapName = UnitaleUtil.MapCorrespondanceList[SceneManager.GetActiveScene().name];
@@ -95,18 +97,24 @@ public class GameState {
         foreach (UnderItem item in ItemBox.items)
             boxContents.Add(item.Name);
 
+        playerTime = Time.time - GlobalControls.overworldTimestamp;
+
         try {
             foreach (string key in LuaScriptBinder.GetSavedDictionary().Keys) {
                 DynValue dv;
                 LuaScriptBinder.GetSavedDictionary().TryGetValue(key, out dv);
                 switch (dv.Type) {
-                    case DataType.Number: playerVariablesNum.Add(key, dv.Number); break;
-                    case DataType.String: playerVariablesStr.Add(key, dv.String); break;
+                    case DataType.Number:  playerVariablesNum.Add(key, dv.Number);   break;
+                    case DataType.String:  playerVariablesStr.Add(key, dv.String);   break;
                     case DataType.Boolean: playerVariablesBool.Add(key, dv.Boolean); break;
-                    default: UnitaleUtil.WriteInLogAndDebugger("SaveLoad: This DynValue can't be added to the save because it is unserializable."); break;
+                    case DataType.Nil:     LuaScriptBinder.Remove(key);              break;
+                    default:
+                        UnitaleUtil.WriteInLogAndDebugger("The saved value \"" + key + "\" is erroneous because a " + dv.Type.ToString().ToLower() + " can't be saved. Deleting it now.");
+                        LuaScriptBinder.Remove(key);
+                        break;
                 }
             }
-        } catch { }
+        } catch { /* ignored */ }
 
         mapInfos = GlobalControls.GameMapData;
         tempMapInfos = GlobalControls.TempGameMapData;
@@ -115,13 +123,12 @@ public class GameState {
     public void LoadGameVariables(bool loadGlobals = true) {
         GlobalControls.TempGameMapData = tempMapInfos;
         GlobalControls.GameMapData = mapInfos;
-        
+
         foreach (string key in playerVariablesNum.Keys) {
-            if (loadGlobals || key.Contains("PlayerPos")) {
-                double a;
-                playerVariablesNum.TryGetValue(key, out a);
-                LuaScriptBinder.Set(null, key, DynValue.NewNumber(a));
-            }
+            if (!loadGlobals && !key.Contains("PlayerPos")) continue;
+            double a;
+            playerVariablesNum.TryGetValue(key, out a);
+            LuaScriptBinder.Set(null, key, DynValue.NewNumber(a));
         }
         if (loadGlobals) {
             foreach (string key in playerVariablesStr.Keys) {
@@ -149,13 +156,9 @@ public class GameState {
         ControlPanel.instance = controlpanel;
         MusicManager.hiddenDictionary = soundDictionary;
 
-        string mapName;
-        if (UnitaleUtil.MapCorrespondanceList.ContainsValue(lastScene)) mapName = UnitaleUtil.MapCorrespondanceList.FirstOrDefault(x => x.Value == lastScene).Key;
-        else                                                            mapName = lastScene;
-        GlobalControls.lastScene = mapName;
+        string mapName = UnitaleUtil.MapCorrespondanceList.ContainsValue(lastScene) ? UnitaleUtil.MapCorrespondanceList.FirstOrDefault(x => x.Value == lastScene).Key : lastScene;
 
         LuaScriptBinder.Set(null, "PlayerMap", DynValue.NewString(mapName));
-        CYFAnimator.specialPlayerHeader = playerHeader;
     }
 }
 

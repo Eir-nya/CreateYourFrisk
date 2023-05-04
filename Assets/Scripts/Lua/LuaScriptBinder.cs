@@ -3,6 +3,12 @@ using System.Collections.Generic;
 using MoonSharp.Interpreter;
 using MoonSharp.Interpreter.Loaders;
 using UnityEngine;
+using Object = UnityEngine.Object;
+
+internal class LuaTextManagerDescriptor : MoonSharp.Interpreter.Interop.StandardUserDataDescriptor {
+    public LuaTextManagerDescriptor(Type type, InteropAccessMode accessMode) : base(type, accessMode) { }
+    public override string AsString(object obj) { return "LuaTextManager"; }
+}
 
 /// <summary>
 /// Takes care of creating <see cref="Script"/> objects with globally bound functions.
@@ -11,31 +17,35 @@ using UnityEngine;
 /// </summary>
 public static class LuaScriptBinder {
     private static Dictionary<string, DynValue> dict = new Dictionary<string, DynValue>(), battleDict = new Dictionary<string, DynValue>(), alMightyDict = new Dictionary<string, DynValue>();
-    private static MusicManager mgr = new MusicManager();
-    private static NewMusicManager newmgr = new NewMusicManager();
-    public static List<Script> scriptlist = new List<Script>(); 
+    private static readonly MusicManager mgr = new MusicManager();
+    private static readonly NewMusicManager newmgr = new NewMusicManager();
 
     /// <summary>
     /// Registers C# types with MoonSharp so we can bind them to Lua scripts later.
     /// </summary>
     static LuaScriptBinder() {
-        UserData.RegisterType<MusicManager>();              // TODO: fix functions with return values that shouldn't return anything anyway
-        UserData.RegisterType<NewMusicManager>();           // TONOTFIX: I don't know what you mean here
+        // Battle bindings
+        UserData.RegisterType<MusicManager>();
+        UserData.RegisterType<NewMusicManager>();
         UserData.RegisterType<ProjectileController>();
         UserData.RegisterType<LuaArenaStatus>();
         UserData.RegisterType<LuaPlayerStatus>();
-        UserData.RegisterType<LuaEnemyStatus>();
         UserData.RegisterType<LuaInputBinding>();
         UserData.RegisterType<LuaUnityTime>();
         UserData.RegisterType<ScriptWrapper>();
         UserData.RegisterType<LuaSpriteController>();
         UserData.RegisterType<LuaInventory>();
-        UserData.RegisterType<Letter>();
         UserData.RegisterType<Misc>();
-        UserData.RegisterType<LuaTextManager>();
+        UserData.RegisterType<LuaTextManager>(new LuaTextManagerDescriptor(typeof(LuaTextManager), InteropAccessMode.Default));
         UserData.RegisterType<LuaFile>();
-        //UserData.RegisterType<Windows>();
-        //Overworld
+        UserData.RegisterType<LuaSpriteShader>();
+        UserData.RegisterType<LuaSpriteShader.MatrixFourByFour>();
+        UserData.RegisterType<LuaDiscord>();
+        UserData.RegisterType<LuaPlayerUI>();
+        UserData.RegisterType<LifeBarController>();
+        UserData.RegisterType<LuaCYFObject>();
+
+        // Overworld bindings
         UserData.RegisterType<LuaEventOW>();
         UserData.RegisterType<LuaPlayerOW>();
         UserData.RegisterType<LuaGeneralOW>();
@@ -49,10 +59,9 @@ public static class LuaScriptBinder {
     /// </summary>
     /// <returns>Script object for use within Unitale</returns>
     public static Script BoundScript(/*bool overworld = false*/) {
-        Script script = new Script(CoreModules.Preset_Complete ^ CoreModules.IO ^ CoreModules.OS_System);
+        Script script = new Script(CoreModules.Preset_Complete ^ CoreModules.IO ^ CoreModules.OS_System) { Options = { ScriptLoader = new FileSystemScriptLoader() } };
         // library support
-        script.Options.ScriptLoader = new FileSystemScriptLoader();
-        ((ScriptLoaderBase)script.Options.ScriptLoader).ModulePaths = new string[] { FileLoader.pathToModFile("Lua/?.lua"), FileLoader.pathToDefaultFile("Lua/?.lua"), FileLoader.pathToModFile("Lua/Libraries/?.lua"), FileLoader.pathToDefaultFile("Lua/Libraries/?.lua") };
+        ((ScriptLoaderBase)script.Options.ScriptLoader).ModulePaths = new[] { FileLoader.PathToModFile("Lua/?.lua"), FileLoader.PathToDefaultFile("Lua/?.lua"), FileLoader.PathToModFile("Lua/Libraries/?.lua"), FileLoader.PathToDefaultFile("Lua/Libraries/?.lua") };
         // separate function bindings
         script.Globals["SetGlobal"] = (Action<Script, string, DynValue>)SetBattle;
         script.Globals["GetGlobal"] = (Func<Script, string, DynValue>)GetBattle;
@@ -62,55 +71,63 @@ public static class LuaScriptBinder {
         script.Globals["GetAlMightyGlobal"] = (Func<Script, string, DynValue>)GetAlMighty;
 
         script.Globals["isCYF"] = true;
+        script.Globals["isRetro"] = GlobalControls.retroMode;
         script.Globals["safe"] = ControlPanel.instance.Safe;
         #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
             script.Globals["windows"] = true;
         #else
             script.Globals["windows"] = false;
         #endif
-        script.Globals["CYFversion"] = "0.6.2.2";
+
+        script.Globals["UnloadSprite"] = (Action<string>)SpriteRegistry.Unload;
+
+        script.Globals["CYFversion"] = GlobalControls.CYFversion;
+        script.Globals["LTSversion"] = GlobalControls.LTSversion;
         if (!UnitaleUtil.IsOverworld) {
             script.Globals["CreateSprite"] = (Func<string, string, int, DynValue>)SpriteUtil.MakeIngameSprite;
-            script.Globals["CreateLayer"] = (Action<string, string, bool>)SpriteUtil.CreateLayer;
+            script.Globals["CreateLayer"] = (Func<string, string, bool, bool>)SpriteUtil.CreateLayer;
             script.Globals["CreateProjectileLayer"] = (Action<string, string, bool>)SpriteUtil.CreateProjectileLayer;
             script.Globals["SetFrameBasedMovement"] = (Action<bool>)SetFrameBasedMovement;
             script.Globals["SetAction"] = (Action<string>)SetAction;
             script.Globals["SetPPCollision"] = (Action<bool>)SetPPCollision;
             script.Globals["AllowPlayerDef"] = (Action<bool>)AllowPlayerDef;
-            script.Globals["GetLetters"] = (Func<Letter[]>)GetLetters;
             script.Globals["CreateText"] = (Func<Script, DynValue, DynValue, int, string, int, LuaTextManager>)CreateText;
+            script.Globals["CreateBar"] = (Func<float, float, float, float, LifeBarController>)LifeBarController.Create;
+            script.Globals["CreateBarWithSprites"] = (Func<float, float, string, string, LifeBarController>)LifeBarController.Create;
             script.Globals["GetCurrentState"] = (Func<string>)GetState;
-            script.Globals["BattleDialog"] = (Action<DynValue>)LuaEnemyEncounter.BattleDialog;
-            script.Globals["BattleDialogue"] = (Action<DynValue>)LuaEnemyEncounter.BattleDialog;
-            if (LuaEnemyEncounter.doNotGivePreviousEncounterToSelf)
-                LuaEnemyEncounter.doNotGivePreviousEncounterToSelf = false;
+            script.Globals["BattleDialog"] = (Action<Script, DynValue>)EnemyEncounter.BattleDialog;
+            script.Globals["BattleDialogue"] = (Action<Script, DynValue>)EnemyEncounter.BattleDialog;
+            script.Globals["CreateState"] = (Action<string>)UIController.CreateNewUIState;
+
+            if (EnemyEncounter.doNotGivePreviousEncounterToSelf)
+                EnemyEncounter.doNotGivePreviousEncounterToSelf = false;
             else
-                script.Globals["Encounter"] = LuaEnemyEncounter.script_ref;
+                script.Globals["Encounter"] = EnemyEncounter.script;
+
             DynValue PlayerStatus = UserData.Create(PlayerController.luaStatus);
             script.Globals.Set("Player", PlayerStatus);
+            DynValue ArenaStatus = UserData.Create(ArenaManager.luaStatus);
+            script.Globals.Set("Arena", ArenaStatus);
+            DynValue LuaUI = UserData.Create(new LuaPlayerUI());
+            script.Globals.Set("UI", LuaUI);
         } else if (!GlobalControls.isInShop) {
             try {
-                DynValue PlayerOW = UserData.Create(EventManager.instance.luaplow);
+                DynValue PlayerOW = UserData.Create(EventManager.instance.luaPlayerOw);
                 script.Globals.Set("FPlayer", PlayerOW);
-                //script.Globals.Set("Player", PlayerOW);
-                DynValue EventOW = UserData.Create(EventManager.instance.luaevow);
+                DynValue EventOW = UserData.Create(EventManager.instance.luaEventOw);
                 script.Globals.Set("FEvent", EventOW);
-                //script.Globals.Set("Event", EventOW);
-                DynValue GeneralOW = UserData.Create(EventManager.instance.luagenow);
+                DynValue GeneralOW = UserData.Create(EventManager.instance.luaGeneralOw);
                 script.Globals.Set("FGeneral", GeneralOW);
-                //script.Globals.Set("General", GeneralOW);
-                DynValue InventoryOW = UserData.Create(EventManager.instance.luainvow);
+                DynValue InventoryOW = UserData.Create(EventManager.instance.luaInventoryOw);
                 script.Globals.Set("FInventory", InventoryOW);
-                //script.Globals.Set("Inventory", InventoryOW);
-                DynValue ScreenOW = UserData.Create(EventManager.instance.luascrow);
+                DynValue ScreenOW = UserData.Create(EventManager.instance.luaScreenOw);
                 script.Globals.Set("FScreen", ScreenOW);
-                //script.Globals.Set("Screen", ScreenOW);
-                DynValue MapOW = UserData.Create(EventManager.instance.luamapow);
+                DynValue MapOW = UserData.Create(EventManager.instance.luaMapOw);
                 script.Globals.Set("FMap", MapOW);
-                //script.Globals.Set("Map", MapOW);
-            } catch { }
+            } catch { /* ignored */ }
         }
         script.Globals["DEBUG"] = (Action<string>)UnitaleUtil.WriteInLogAndDebugger;
+        script.Globals["EnableDebugger"] = (Action<bool>)EnableDebugger;
         // clr bindings
         DynValue MusicMgr = UserData.Create(mgr);
         script.Globals.Set("Audio", MusicMgr);
@@ -132,62 +149,52 @@ public static class LuaScriptBinder {
         script.Globals.Set("Misc", Win);
         DynValue TimeInfo = UserData.Create(new LuaUnityTime());
         script.Globals.Set("Time", TimeInfo);
-        scriptlist.Add(script);
+        DynValue DiscordMgr = UserData.Create(new LuaDiscord());
+        script.Globals.Set("Discord", DiscordMgr);
         return script;
     }
-    
+
     private delegate TResult Func<T1, T2, T3, T4, T5, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5);
     private delegate TResult Func<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg, T6 arg6);
 
     public static string GetState() {
-        try {
-            return (UIController.instance.frozenState != UIController.UIState.PAUSE) ? UIController.instance.frozenState.ToString() : UIController.instance.state.ToString();
-        } catch {
-            return "NONE (error)";
-        }
+        try { return (UIController.instance.frozenState != "PAUSE") ? UIController.instance.frozenState : UIController.instance.state; }
+        catch { return "NONE (error)"; }
     }
 
     public static DynValue Get(Script script, string key) {
         if (key == null)
             throw new CYFException("GetRealGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
-        if (dict.ContainsKey(key)) {
-            // Due to how MoonSharp tables require an owner, we have to create an entirely new table if we want to work with it in other scripts.
-            if (dict[key].Type == DataType.Table) {
-                DynValue t = DynValue.NewTable(script);
-                foreach (TablePair pair in dict[key].Table.Pairs)
-                    t.Table.Set(pair.Key, pair.Value);
-                return t;
-            } else
-                return dict[key];
-        }
-        return null;
+        if (!dict.ContainsKey(key))
+            return null;
+        return dict[key];
     }
 
     public static void Set(Script script, string key, DynValue value) {
         if (key == null)
             throw new CYFException("SetRealGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
-        if (dict.ContainsKey(key))
-            dict[key] = value;
-        else
-            dict.Add(key, value);
+
+        if (value.Type != DataType.Number && value.Type != DataType.String && value.Type != DataType.Boolean && value.Type != DataType.Nil) {
+            UnitaleUtil.WriteInLogAndDebugger("SetRealGlobal: The value \"" + key + "\" can't be saved in the savefile because it is a " + value.Type.ToString().ToLower() + ".");
+            return;
+        }
+
+        if (dict.ContainsKey(key)) dict[key] = value;
+        else                       dict.Add(key, value);
     }
 
     public static DynValue GetBattle(Script script, string key) {
         if (key == null)
             throw new CYFException("GetGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
-        if (battleDict.ContainsKey(key)) {
-            // Due to how MoonSharp tables require an owner, we have to create an entirely new table if we want to work with it in other scripts.
-            if (battleDict[key].Type == DataType.Table) {
-                DynValue t = DynValue.NewTable(script);
-                foreach (TablePair pair in battleDict[key].Table.Pairs)
-                    t.Table.Set(pair.Key, pair.Value);
-                return t;
-            } else
-            return battleDict[key];
-        }
-        return null;
+        if (!battleDict.ContainsKey(key)) return null;
+        // Due to how MoonSharp tables require an owner, we have to create an entirely new table if we want to work with it in other scripts.
+        if (battleDict[key].Type != DataType.Table) return battleDict[key];
+        DynValue t = DynValue.NewTable(script);
+        foreach (TablePair pair in battleDict[key].Table.Pairs)
+            t.Table.Set(pair.Key, pair.Value);
+        return t;
     }
-    
+
     public static void SetBattle(Script script, string key, DynValue value) {
         if (key == null)
             throw new CYFException("SetGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
@@ -199,23 +206,21 @@ public static class LuaScriptBinder {
     public static DynValue GetAlMighty(Script script, string key) {
         if (key == null)
             throw new CYFException("GetAlMightyGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
-        if (alMightyDict.ContainsKey(key)) {
-            // Due to how MoonSharp tables require an owner, we have to create an entirely new table if we want to work with it in other scripts.
-            if (alMightyDict[key].Type == DataType.Table) {
-                DynValue t = DynValue.NewTable(script);
-                foreach (TablePair pair in alMightyDict[key].Table.Pairs)
-                    t.Table.Set(pair.Key, pair.Value);
-                return t;
-            } else
-                return alMightyDict[key];
-        }
-        return null;
+        if (!alMightyDict.ContainsKey(key))
+            return null;
+        return alMightyDict[key];
     }
 
     public static void SetAlMighty(Script script, string key, DynValue value) { SetAlMighty(script, key, value, true); }
     public static void SetAlMighty(Script script, string key, DynValue value, bool reload) {
         if (key == null)
             throw new CYFException("SetAlMightyGlobal: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
+
+        if (value.Type != DataType.Number && value.Type != DataType.String && value.Type != DataType.Boolean && value.Type != DataType.Nil) {
+            UnitaleUtil.WriteInLogAndDebugger("SetAlMightyGlobal: The value \"" + key + "\" can't be saved in the almighties because it is a " + value.Type.ToString().ToLower() + ".");
+            return;
+        }
+
         if (alMightyDict.ContainsKey(key))
             alMightyDict.Remove(key);
         alMightyDict.Add(key, value);
@@ -241,23 +246,28 @@ public static class LuaScriptBinder {
 
     public static void ClearVariables() {
         dict.Clear();
+        // Battle bindings
         UserData.RegisterType<MusicManager>();
         UserData.RegisterType<NewMusicManager>();
         UserData.RegisterType<ProjectileController>();
         UserData.RegisterType<LuaArenaStatus>();
         UserData.RegisterType<LuaPlayerStatus>();
-        UserData.RegisterType<LuaEnemyStatus>();
         UserData.RegisterType<LuaInputBinding>();
         UserData.RegisterType<LuaUnityTime>();
         UserData.RegisterType<ScriptWrapper>();
         UserData.RegisterType<LuaSpriteController>();
         UserData.RegisterType<LuaInventory>();
-        UserData.RegisterType<Letter>();
         UserData.RegisterType<Misc>();
-        UserData.RegisterType<LuaTextManager>();
+        UserData.RegisterType<LuaTextManager>(new LuaTextManagerDescriptor(typeof(LuaTextManager), InteropAccessMode.Default));
         UserData.RegisterType<LuaFile>();
-        //UserData.RegisterType<Windows>();
-        //Overworld
+        UserData.RegisterType<LuaSpriteShader>();
+        UserData.RegisterType<LuaSpriteShader.MatrixFourByFour>();
+        UserData.RegisterType<LuaDiscord>();
+        UserData.RegisterType<LuaPlayerUI>();
+        UserData.RegisterType<LifeBarController>();
+        UserData.RegisterType<LuaCYFObject>();
+
+        // Overworld bindings
         UserData.RegisterType<LuaEventOW>();
         UserData.RegisterType<LuaPlayerOW>();
         UserData.RegisterType<LuaGeneralOW>();
@@ -308,7 +318,7 @@ public static class LuaScriptBinder {
             if (key.Contains(str))
                 list.Add(key);
         return list;
-    } 
+    }
 
     public static void CopyToBattleVar() {
         dict["CYFSwitch"] = DynValue.NewBoolean(true);
@@ -323,27 +333,24 @@ public static class LuaScriptBinder {
 
     public static void SetAction(string action) {
         try {
-            UIController.instance.forcedaction = (UIController.Actions)Enum.Parse(typeof(UIController.Actions), action, true);
-        } catch { throw new CYFException("SetAction() can only take FIGHT or ACT, but you entered \"" + action + "\"."); }
+            UIController.instance.forcedAction = (UIController.Actions)Enum.Parse(typeof(UIController.Actions), action, true);
+            if (UIController.instance.forcedAction != UIController.Actions.NONE)
+                UIController.instance.MovePlayerToAction(UIController.instance.forcedAction);
+        } catch { throw new CYFException("SetAction() can only take \"FIGHT\", \"ACT\", \"ITEM\" or \"MERCY\", but you entered \"" + action + "\"."); }
     }
 
     public static void SetPPCollision(bool b) {
-        GlobalControls.ppcollision = b;
+        ProjectileController.globalPixelPerfectCollision = b;
         foreach (LuaProjectile p in GameObject.Find("Canvas").GetComponentsInChildren<LuaProjectile>(true))
             if (!p.ppchanged)
                 p.ppcollision = b;
     }
 
-    public static void AllowPlayerDef(bool b) { GlobalControls.allowplayerdef = b; }
+    public static void AllowPlayerDef(bool b) { PlayerController.allowplayerdef = b; }
 
     public static void SetPPAlphaLimit(float f) {
         if (f < 0 || f > 1)  UnitaleUtil.DisplayLuaError("Pixel-Perfect alpha limit", "The alpha limit should be between 0 and 1.");
         else                 ControlPanel.instance.MinimumAlpha = f;
-    }
-
-    public static Letter[] GetLetters() {
-        if (UIController.instance.state != UIController.UIState.ACTIONSELECT)  return null;
-        else                                                                   return GameObject.Find("TextManager").GetComponentsInChildren<Letter>();
     }
 
     public static LuaTextManager CreateText(Script scr, DynValue text, DynValue position, int textWidth, string layer = "BelowPlayer", int bubbleHeight = -1) {
@@ -353,10 +360,10 @@ public static class LuaScriptBinder {
         if (position == null || position.Type != DataType.Table || position.Table.Get(1).Type != DataType.Number || position.Table.Get(2).Type != DataType.Number)
             throw new CYFException("CreateText: The position argument must be a non-empty table of two numbers.");
 
-        GameObject go = UnityEngine.Object.Instantiate(Resources.Load<GameObject>("Prefabs/CstmTxtContainer"));
+        GameObject go = Object.Instantiate(Resources.Load<GameObject>("Prefabs/CstmTxtContainer"));
         LuaTextManager luatm = go.GetComponentInChildren<LuaTextManager>();
-        go.GetComponent<RectTransform>().position = new Vector2((float)position.Table.Get(1).Number, (float)position.Table.Get(2).Number);
-        
+        luatm.MoveToAbs((float)position.Table.Get(1).Number, (float)position.Table.Get(2).Number);
+
         UnitaleUtil.GetChildPerName(go.transform, "BubbleContainer").GetComponent<RectTransform>().pivot = new Vector2(0, 1);
         UnitaleUtil.GetChildPerName(go.transform, "BubbleContainer").GetComponent<RectTransform>().localPosition = new Vector2(-12, 8);
         UnitaleUtil.GetChildPerName(go.transform, "BubbleContainer").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth + 20, 100);     //Used to set the borders
@@ -364,98 +371,99 @@ public static class LuaScriptBinder {
         UnitaleUtil.GetChildPerName(go.transform, "BackVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth - 20, 100);            //BackVert
         UnitaleUtil.GetChildPerName(go.transform, "CenterHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth + 16, 96 - 16 * 2);  //CenterHorz
         UnitaleUtil.GetChildPerName(go.transform, "CenterVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth - 16, 96);           //CenterVert
-        // luatm.SetFont(SpriteFontRegistry.UI_MONSTERTEXT_NAME, true);
+        luatm.Move(0, 0);
         foreach (ScriptWrapper scrWrap in ScriptWrapper.instances) {
-            if (scrWrap.script == scr) {
-                luatm.SetCaller(scrWrap);
-                break;
-            }
+            if (scrWrap.script != scr) continue;
+            luatm.SetCaller(scrWrap);
+            break;
         }
         // Layers don't exist in the overworld, so we don't set it
-        if (!UnitaleUtil.IsOverworld)
+        if (!UnitaleUtil.IsOverworld || GlobalControls.isInShop)
             luatm.layer = layer;
-        luatm.textMaxWidth = textWidth;
-        luatm.bubbleHeight = bubbleHeight;
-        luatm.ShowBubble();
+        else
+            luatm.layer = (layer == "BelowPlayer" ? "Default" : layer);
 
         // Converts the text argument into a table if it's a simple string
-        text = text.Type == DataType.String ? DynValue.NewTable(scr, new DynValue[1] { text }) : text;
+        text = text.Type == DataType.String ? DynValue.NewTable(scr, text) : text;
 
-        if (text.Table.Length == 0)
-            text = null;
-        
         //////////////////////////////////////////
         ///////////  LATE START SETTER  //////////
         //////////////////////////////////////////
-        
+
         // Text objects' Late Start will be disabled if the first line of text contains [instant] before any regular characters
         bool enableLateStart = true;
-        
+
         // if we've made it this far, then the text is valid.
-        
+
         // so, let's scan the first line of text for [instant]
         string firstLine = text.Table.Get(1).String;
-        
+
         // if [instant] or [instant:allowcommand] is found, check for the earliest match, and whether it is at the beginning
-        if (firstLine.IndexOf("[instant]") > -1 || firstLine.IndexOf("[instant:allowcommand]") > -1) {
+        if (firstLine.IndexOf("[instant]", StringComparison.OrdinalIgnoreCase) > -1 || firstLine.IndexOf("[instant:allowcommand]", StringComparison.OrdinalIgnoreCase) > -1) {
             // determine whether [instant] or [instant:allowcommand] is first
             string testFor = "[instant]";
-            if (firstLine.IndexOf("[instant:allowcommand]") > -1 &&
-                ((firstLine.IndexOf("[instant]") > -1 && firstLine.IndexOf("[instant:allowcommand]") < firstLine.IndexOf("[instant]"))
-                || firstLine.IndexOf("[instant]") == -1)) {
+            if (firstLine.IndexOf("[instant:allowcommand]", StringComparison.OrdinalIgnoreCase) > -1 &&
+                firstLine.IndexOf("[instant:allowcommand]", StringComparison.OrdinalIgnoreCase) < firstLine.IndexOf("[instant]", StringComparison.OrdinalIgnoreCase) || firstLine.IndexOf("[instant]", StringComparison.OrdinalIgnoreCase) == -1)
                 testFor = "[instant:allowcommand]";
-            }
-            
+
             // grab all of the text that comes before the matched command
-            string precedingText = firstLine.Substring(0, firstLine.IndexOf(testFor));
-            
+            string precedingText = firstLine.Substring(0, firstLine.IndexOf(testFor, StringComparison.OrdinalIgnoreCase));
+
             // remove all commands other than the matched command from this variable
             while (precedingText.IndexOf('[') > -1) {
-                for (var i = 0; i < precedingText.Length; i++) {
-                    if (precedingText[i] == ']') {
-                        precedingText = precedingText.Replace(precedingText.Substring(0, i + 1), "");
-                        break;
-                    }
-                }
+                int i = 0;
+                if (UnitaleUtil.ParseCommandInline(precedingText, ref i) == null) break;
+                precedingText = precedingText.Replace(precedingText.Substring(0, i + 1), "");
             }
-            
+
             // if the length of the remaining string is 0, then disable late start!
             if (precedingText.Length == 0)
                 enableLateStart = false;
         }
-        
+
         //////////////////////////////////////////
         /////////// INITIAL FONT SETTER //////////
         //////////////////////////////////////////
-        
-        // If the first line of text has [font] at the beginning, use it intially!
-        if (firstLine.IndexOf("[font:") > -1 && firstLine.IndexOf(']') > firstLine.IndexOf("[font:")) {
+
+        // If the first line of text has [font] at the beginning, use it initially!
+        if (firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase) > -1 && firstLine.Substring(firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase)).IndexOf(']') > -1) {
             // grab all of the text that comes before the matched command
-            string precedingText = firstLine.Substring(0, firstLine.IndexOf("[font:"));
-            
+            string precedingText = firstLine.Substring(0, firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase));
+
             // remove all commands other than the matched command from this variable
             while (precedingText.IndexOf('[') > -1) {
-                for (var i = 0; i < precedingText.Length; i++) {
-                    if (precedingText[i] == ']') {
-                        precedingText = precedingText.Replace(precedingText.Substring(0, i + 1), "");
-                        break;
-                    }
-                }
+                int i = 0;
+                if (UnitaleUtil.ParseCommandInline(precedingText, ref i) == null) break;
+                precedingText = precedingText.Replace(precedingText.Substring(0, i + 1), "");
             }
-            
+
             // if the length of the remaining string is 0, then set the font!
             if (precedingText.Length == 0) {
-                string fontPartOne = firstLine.Substring(firstLine.IndexOf("[font:") + 6);
-                string fontPartTwo = fontPartOne.Substring(0, fontPartOne.IndexOf("]") - 0);
-                luatm.SetFont(fontPartTwo, true);
-            }
-        }
-        
+                int startCommand = firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase);
+                string command = UnitaleUtil.ParseCommandInline(precedingText, ref startCommand);
+                if (command != null) {
+                    string fontPartOne = command.Substring(6);
+                    string fontPartTwo = fontPartOne.Substring(0, fontPartOne.IndexOf("]", StringComparison.OrdinalIgnoreCase));
+                    UnderFont font = SpriteFontRegistry.Get(fontPartTwo);
+                    if (font == null)
+                        throw new CYFException("The font \"" + fontPartTwo + "\" doesn't exist.\nYou should check if you made a typo, or if the font really is in your mod.");
+                    luatm.SetFont(font, true);
+                } else luatm.ResetFont();
+            } else     luatm.ResetFont();
+        } else         luatm.ResetFont();
+
+        // Bubble variables
+        luatm.bubble = true;
+        luatm.textMaxWidth = textWidth;
+        luatm.bubbleHeight = bubbleHeight;
+
         if (enableLateStart)
-            luatm.LateStartWaiting = true;
-        luatm.SetText(text);
-        if (enableLateStart)
-            luatm.LateStart();
+            luatm.lateStartWaiting = true;
+        luatm.SetText(text, false);
+        luatm.ShowBubble();
+
+        if (!enableLateStart) return luatm;
+        luatm.LateStart();
         return luatm;
     }
 
@@ -474,10 +482,20 @@ public static class LuaScriptBinder {
                 obj1.transform.SetParent(GameObject.Find(layer + "Layer").transform);
                 obj2.transform.SetParent(GameObject.Find(layer + "Layer").transform);
             }
-        } 
+        }
         catch {
             obj1.transform.SetParent(parent1);
             obj2.transform.SetParent(parent2);
         }
+    }
+
+    public static void EnableDebugger(bool state) {
+        if (UserDebugger.instance == null)
+            return;
+
+        UserDebugger.instance.canShow = state;
+        if (state || !UserDebugger.instance.gameObject.activeSelf) return;
+        UserDebugger.instance.gameObject.SetActive(false);
+        Camera.main.GetComponent<FPSDisplay>().enabled = false;
     }
 }

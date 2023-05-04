@@ -9,198 +9,194 @@ using MoonSharp.Interpreter;
 /// Controls that should be active on all screens. Pretty much a hack to allow people to reset. Now it's more useful.
 /// </summary>
 public class GlobalControls : MonoBehaviour {
-    public static int frame = 0;
-    public static PlayerOverworld po;
-    public static UndertaleInput input = new KeyboardInput();
-    public static LuaInputBinding luaInput = new LuaInputBinding(input);
-    public static AudioClip Music;
-    // public static Texture2D texBeforeEncounter;
-    public static string realName;
-    public static string lastScene = "test2";
-    public static int uduu; //A secret for everyone :)
-    public static int fleeIndex = 0;
-    public static bool modDev = false;
-    public static bool lastSceneUnitale = false;
-    public static bool lastTitle = false;
-    public static bool ppcollision = false;
-    public static bool allowplayerdef = false;
-    public static bool crate = false;
-    public static bool retroMode = false;
-    public static bool stopScreenShake = false;
-    public static bool isInFight = false;
-    public static bool isInShop = false;
-    private bool screenShaking = false;
-    public static Vector2 beginPosition;
-    //public static bool samariosNightmare = false;
-    public static string[] nonOWScenes = new string[] { "Battle", "Error", /*"EncounterSelect",*/ "ModSelect", "GameOver", "TitleScreen", "Disclaimer", "EnterName", "TransitionOverworld", "Intro" };
-    public static string[] canTransOW = new string[] { "Battle", "Error", "GameOver" };
-    //Wow what's this
-    public static Dictionary<string, GameState.MapData> GameMapData = new Dictionary<string, GameState.MapData>();
-    public static Dictionary<string, GameState.EventInfos> EventData = new Dictionary<string, GameState.EventInfos>();
-    public static Dictionary<string, GameState.TempMapData> TempGameMapData = new Dictionary<string, GameState.TempMapData>();
-    /*void Start() {
-        if ((Application.platform == RuntimePlatform.WindowsEditor || Application.platform == RuntimePlatform.WindowsPlayer) && windows == null)
-            windows = new Windows();
-        else if (window == null
-            misc = new Misc();
-    }*/
-    
-    // used to only call Awake once
-    private bool awakened = false;
-    
-    void Awake() {
-        if (!awakened) {
-            SceneManager.sceneLoaded += LoadScene;
-            
-            // use AlMightyGlobals to load Safe Mode, Retromode and Fullscreen mode preferences
-            
-            // check if safe mode has a stored preference that is a boolean
-            if (LuaScriptBinder.GetAlMighty(null, "CYFSafeMode") != null
-             && LuaScriptBinder.GetAlMighty(null, "CYFSafeMode").Type == DataType.Boolean)
-                ControlPanel.instance.Safe = LuaScriptBinder.GetAlMighty(null, "CYFSafeMode").Boolean;
-            
-            // check if retro mode has a stored preference that is a boolean
-            if (LuaScriptBinder.GetAlMighty(null, "CYFRetroMode") != null
-             && LuaScriptBinder.GetAlMighty(null, "CYFRetroMode").Type == DataType.Boolean)
-                retroMode = LuaScriptBinder.GetAlMighty(null, "CYFRetroMode").Boolean;
-            
-            // check if fullscreen mode has a stored preference that is a boolean
-            if (LuaScriptBinder.GetAlMighty(null, "CYFPerfectFullscreen") != null
-             && LuaScriptBinder.GetAlMighty(null, "CYFPerfectFullscreen").Type == DataType.Boolean)
-                perfectFullscreen = LuaScriptBinder.GetAlMighty(null, "CYFPerfectFullscreen").Boolean;
-            
-            // check if window scale has a stored preference that is a number
-            if (LuaScriptBinder.GetAlMighty(null, "CYFWindowScale") != null
-             && LuaScriptBinder.GetAlMighty(null, "CYFWindowScale").Type == DataType.Number)
-                windowScale = (int)LuaScriptBinder.GetAlMighty(null, "CYFWindowScale").Number;
-            
-            awakened = true;
+    public static string CYFversion       = "0.6.6";    // Current version of CYF displayed in the main menu and usable in scripts
+    public static string OverworldVersion = "0.6.6";    // Last version in which the overworld was changed, notifying any user with an old save to delete it
+    public static int    LTSversion       = 2;          // LTS version, mainly used for CYF 0.6.6
+    public static int    BetaVersion      = 17;         // Only used for beta versions
+
+    public static int frame;                        // Frame counter used for logging purposes
+    public static float overworldTimestamp = 0f;    // Timestamp of the creation of the save file, mostly used to know the time spent in this save in the save and load screen
+
+    public static UndertaleInput input = new KeyboardInput();               // KeyboardInput singleton, registering any key press the Player does and handling them
+    public static LuaInputBinding luaInput = new LuaInputBinding(input);    // Input Lua object, usable on the Lua side
+
+    public static string realName;      // Player's name in the overworld, given through the scene EnterName
+    public static bool modDev;          // True if we entered the mod selection screen and not the overworld, false otherwise
+    public static bool crate;           // True if CrateYourFrisk mode is active, false otherwise
+    public static bool retroMode;       // True if the Unitale 0.2.1a retrocompatibility mode is active, false otherwise
+    public static bool stopScreenShake; // Used to stop any screenshake currently ongoing
+    public static bool isInFight;       // True if we're in a battle, false otherwise
+    public static bool isInShop;        // True if we're in a shop, false otherwise
+    public static bool allowWipeSave;   // Allows you to wipe your save in the Error scene if it couldn't load properly
+    private bool screenShaking;         // True if a screenshake is occuring, false otherwise
+
+    public static string[] nonOWScenes = { "Battle", "Error", "ModSelect", "Options", "TitleScreen", "Disclaimer", "EnterName", "TransitionOverworld", "Intro" };   // Scenes in which you're not considered to be in the overworld
+    public static string[] canTransOW = { "Battle", "Error" };  // Scenes from which you can enter the overworld
+
+    public static Dictionary<string, GameState.MapData> GameMapData = new Dictionary<string, GameState.MapData>();              // Main save data on each map the Player has visited before
+    public static Dictionary<string, GameState.EventInfos> EventData = new Dictionary<string, GameState.EventInfos>();          // Data stored for each event in the current map, used for data saving
+    public static Dictionary<string, GameState.TempMapData> TempGameMapData = new Dictionary<string, GameState.TempMapData>();  // Data used to save changes applied to maps the Player hasn't visited yet
+
+    private static bool awakened;   // Used to only run Awake() once
+
+    public void Awake() {
+        if (awakened) return;
+        // Create all singletons (classes that only have one instance across the entire app)
+        StaticInits.Start();
+        SaveLoad.Start();
+        new ControlPanel();
+        new PlayerCharacter();
+        // Load AlMighty globals
+        SaveLoad.LoadAlMighty();
+        LuaScriptBinder.Set(null, "ModFolder", DynValue.NewString("@Title"));
+
+        // Load map names for the overworld
+        UnitaleUtil.AddKeysToMapCorrespondanceList();
+
+        // Use AlMightyGlobals to load Crate Your Frisk, Safe Mode, Retromode and Fullscreen mode preferences
+        ReloadCrate();
+
+        // Check if safe mode has a stored preference that is a boolean
+        if (LuaScriptBinder.GetAlMighty(null, "CYFSafeMode")      != null
+         && LuaScriptBinder.GetAlMighty(null, "CYFSafeMode").Type == DataType.Boolean)
+            ControlPanel.instance.Safe = LuaScriptBinder.GetAlMighty(null, "CYFSafeMode").Boolean;
+
+        // Check if retro mode has a stored preference that is a boolean
+        if (LuaScriptBinder.GetAlMighty(null, "CYFRetroMode")      != null
+         && LuaScriptBinder.GetAlMighty(null, "CYFRetroMode").Type == DataType.Boolean)
+            retroMode = LuaScriptBinder.GetAlMighty(null, "CYFRetroMode").Boolean;
+
+        // Check if window scale has a stored preference that is a number
+        if (LuaScriptBinder.GetAlMighty(null, "CYFWindowScale")      != null
+         && LuaScriptBinder.GetAlMighty(null, "CYFWindowScale").Type == DataType.Number) {
+            ScreenResolution.windowScale = (int) System.Math.Max(LuaScriptBinder.GetAlMighty(null, "CYFWindowScale").Number, 1);
+            if (!ScreenResolution.hasInitialized) {
+                Screen.SetResolution(640, 480, Screen.fullScreen, 0);
+                ScreenResolution scrRes = FindObjectOfType<ScreenResolution>();
+                if (scrRes) scrRes.Start();
+            }
+            ScreenResolution.ResetAfterBattle();
         }
+
+        // Start Discord RPC (also checks for an AlMightyGlobal within)
+        DiscordControls.Start();
+
+        awakened = true;
     }
-    
-    // resolution variables
-    public static bool perfectFullscreen = true;
-    public static int fullscreenSwitch = 0;
-    
-    public static int windowScale = 1;
-    
-    #if UNITY_STANDALONE_WIN
+
+    public static void ReloadCrate() {
+        if (LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk") != null && LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk").Boolean)
+            crate = true;
+        #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+            Misc.WindowName = crate ? ControlPanel.instance.WinodwBsaisNmae : ControlPanel.instance.WindowBasisName;
+        #endif
+    }
+
+    #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+        /// <summary>
+        /// Used to reposition the window in the middle of the screen after exiting fullscreen.
+        /// </summary>
+        /// <returns>All coroutines must return an IEnumerator object, don't mind it.</returns>
+        public static int fullscreenSwitch;
+
         static IEnumerator RepositionWindow() {
             yield return new WaitForEndOfFrame();
-            
             try {
-                Misc.MoveWindowTo((int)(Screen.currentResolution.width/2 - (Screen.width/2)), (int)(Screen.currentResolution.height/2 - (Screen.height/2)));
-            } catch {}
-        }
+                Misc.MoveWindowTo(Screen.currentResolution.width / 2 - Screen.width / 2, Screen.currentResolution.height / 2 - Screen.height / 2);
+            } catch { /* ignored */ }
+    }
     #endif
-    
-    public static void SetFullScreen(bool fullscreen, int newSwitch = 1) {
-        if (perfectFullscreen) {
-            if (!fullscreen)
-                Screen.SetResolution(640 * windowScale, 480 * windowScale, false, 0);
-            else
-                Screen.SetResolution(Screen.currentResolution.width, Screen.currentResolution.height, true, 0);
-        } else
-            Screen.SetResolution(640 * windowScale, 480 * windowScale, fullscreen, 0);
-        
-        fullscreenSwitch = newSwitch;
-	}
-
-	private static double RoundToNearestEven(double value) {
-		return System.Math.Truncate(value) + (System.Math.Truncate(value) % 2);
-	}
-
-	static IEnumerator ChangeAspectRatio() {
-        yield return new WaitForFixedUpdate();
-        
-		if (!Application.isEditor) {
-			double ScreenWidth = (Screen.height / (double)3) * (double)4;
-			Screen.SetResolution((int)RoundToNearestEven(ScreenWidth), Screen.height, Screen.fullScreen, 0);
-		}
-	}
 
     /// <summary>
-    /// Control checking, and way more.
+    /// Updates the stored size of the monitor.
     /// </summary>
-    void Update () {
-        if (fullscreenSwitch != 0) {
-            StartCoroutine(ChangeAspectRatio());
-            
-            #if UNITY_STANDALONE_WIN
-                if (!Screen.fullScreen && fullscreenSwitch == 1)
-                    StartCoroutine(RepositionWindow());
-            #endif
-            
-            fullscreenSwitch--;
-        }
-        
-        stopScreenShake = false;
-        if (isInFight)
+    /// <returns>All coroutines must return an IEnumerator object, don't mind it.</returns>
+    public static IEnumerator UpdateMonitorSize() {
+        yield return new WaitForEndOfFrame();
+
+        try {
+            ScreenResolution.lastMonitorSize = new Vector2(Screen.currentResolution.width, Screen.currentResolution.height);
+        } catch { /* ignored */ }
+    }
+
+    /// <summary>
+    /// Run once per frame.
+    /// </summary>
+    private void Update () {
+        // Update Discord RPC
+        DiscordControls.Update();
+
+        #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+            // Reposition the window to the middle of the screen after exiting fullscreen
+            if (fullscreenSwitch == 1)
+                StartCoroutine(RepositionWindow());
+            if (fullscreenSwitch > 0)
+                fullscreenSwitch--;
+        #endif
+
+        // Frame counter used for logging purposes
+        if (isInFight || UnitaleUtil.IsOverworld)
             frame ++;
-        if (SceneManager.GetActiveScene().name == "ModSelect")        lastSceneUnitale = true;
-        else                                                          lastSceneUnitale = false;
-        if (UserDebugger.instance && Input.GetKeyDown(KeyCode.F9)) {
-            if (UserDebugger.instance.gameObject.activeSelf)
-                GameObject.Find("Text").transform.SetParent(UserDebugger.instance.gameObject.transform);
+
+        string sceneName = SceneManager.GetActiveScene().name;
+
+        // Activate Debugger
+        if (UserDebugger.instance && Input.GetKeyDown(KeyCode.F9) && UserDebugger.instance.canShow) {
             UserDebugger.instance.gameObject.SetActive(!UserDebugger.instance.gameObject.activeSelf);
-            Camera.main.GetComponent<FPSDisplay>().enabled = !Camera.main.GetComponent<FPSDisplay>().enabled;
-        } else if (isInFight && Input.GetKeyDown(KeyCode.H) && SceneManager.GetActiveScene().name != "Error" && UserDebugger.instance.gameObject.activeSelf)
-            GameObject.Find("Main Camera").GetComponent<ProjectileHitboxRenderer>().enabled = !GameObject.Find("Main Camera").GetComponent<ProjectileHitboxRenderer>().enabled;
-        else if (Input.GetKeyDown(KeyCode.Escape) && (canTransOW.Contains(SceneManager.GetActiveScene().name) || isInFight)) {
-            if (isInFight && LuaEnemyEncounter.script.GetVar("unescape").Boolean && SceneManager.GetActiveScene().name != "Error")
+            Camera.main.GetComponent<FPSDisplay>().enabled = UserDebugger.instance.gameObject.activeSelf;
+        }
+        // Activate Hitbox Debugger
+        else if (isInFight && Input.GetKeyDown(KeyCode.H) && sceneName != "Error" && UserDebugger.instance.gameObject.activeSelf)
+            gameObject.GetComponent<ProjectileHitboxRenderer>().enabled = !gameObject.GetComponent<ProjectileHitboxRenderer>().enabled;
+        // Exit a battle or the Error scene
+        else if (Input.GetKeyDown(KeyCode.Escape) && (canTransOW.Contains(sceneName) || isInFight)) {
+            if (isInFight && EnemyEncounter.script.GetVar("unescape").Boolean && sceneName != "Error") return;
+            // The Error scene can only be exited if we entered the mod through the mod selection screen
+            if (sceneName == "Error" && !modDev) {
+                ScreenResolution.ResetAfterBattle();
+                UnitaleUtil.ExitOverworld();
+                SceneManager.LoadScene("Disclaimer");
+                DiscordControls.StartTitle();
+                Destroy(GameObject.Find("SpritePivot"));
                 return;
-            if (SceneManager.GetActiveScene().name == "Error" && !modDev)
-                return;
+            }
 
             if (GameOverBehavior.gameOverContainer)
-                if (GameOverBehavior.gameOverContainer.activeInHierarchy)
-                    GameObject.FindObjectOfType<GameOverBehavior>().EndGameOver();
-                else
-                    UIController.EndBattle();
-            else {
-                UIController.EndBattle();
-            }
-            //StaticInits.Reset();
-        } else if (input.Menu == UndertaleInput.ButtonState.PRESSED && !nonOWScenes.Contains(SceneManager.GetActiveScene().name) && !isInFight)
-            if (!PlayerOverworld.instance.PlayerNoMove && EventManager.instance.script == null && !PlayerOverworld.instance.menuRunning[2] && !PlayerOverworld.instance.menuRunning[4] && EventManager.instance.script == null && GameObject.Find("FadingBlack").GetComponent<Fading>().alpha <= 0)
+                if (GameOverBehavior.gameOverContainer.activeInHierarchy) FindObjectOfType<GameOverBehavior>().EndGameOver();
+                else                                                      UIController.EndBattle();
+            else                                                          UIController.EndBattle();
+        }
+        // Open the Menu in the Overworld
+        else if (input.Menu == UndertaleInput.ButtonState.PRESSED && !nonOWScenes.Contains(sceneName) && !isInFight && !isInShop && (!GameOverBehavior.gameOverContainerOw || !GameOverBehavior.gameOverContainerOw.activeInHierarchy)) {
+            if (!PlayerOverworld.instance.PlayerNoMove && EventManager.instance.script == null && !PlayerOverworld.instance.menuRunning[2] && !PlayerOverworld.instance.menuRunning[4] && (GameObject.Find("FadingBlack") == null || GameObject.Find("FadingBlack").GetComponent<Fading>().alpha <= 0))
                 StartCoroutine(PlayerOverworld.LaunchMenu());
-        
-        //else if (Input.GetKeyDown(KeyCode.L))
-        //    MyFirstComponentClass.SpriteAnalyser();
-        if (isInFight)
-            switch (fleeIndex) {
-                case 0:
-                    if (Input.GetKeyDown(KeyCode.F)) fleeIndex++; break;
-                case 1:
-                    if (Input.GetKeyDown(KeyCode.L)) fleeIndex++;
-                    else if (Input.anyKeyDown)       fleeIndex = 0;
-                    break;
-                case 2:
-                    if (Input.GetKeyDown(KeyCode.E)) fleeIndex++;
-                    else if (Input.anyKeyDown)       fleeIndex = 0;
-                    break;
-                case 3:
-                    if (Input.GetKeyDown(KeyCode.E)) fleeIndex++;
-                    else if (Input.anyKeyDown)       fleeIndex = 0;
-                    break;
-                case 4:
-                    if (Input.GetKeyDown(KeyCode.S)) { fleeIndex = -1; UIController.instance.SuperFlee(); }
-                    else if (Input.anyKeyDown)       fleeIndex = 0;
-                    break;
-            }
-        if  (Input.GetKeyDown(KeyCode.F4)        // F4
-          || (Input.GetKeyDown(KeyCode.Return)
-          &&(Input.GetKey(KeyCode.LeftAlt)       // LAlt  + Enter
-          || Input.GetKey(KeyCode.RightAlt))))   // RAlt  + Enter
-			SetFullScreen(!Screen.fullScreen);
+        }
+        // Wipe save and close CYF in the Error scene if save failed to load
+        else if (sceneName == "Error" && allowWipeSave && Input.GetKeyDown(KeyCode.R)) {
+            System.IO.File.Delete(Application.persistentDataPath + "/save.gd");
+            Application.Quit();
+        }
+
+        // Enter fullscreen using given shortcuts
+        if (!ScreenResolution.hasInitialized) return;
+        if (Input.GetKeyDown(KeyCode.F4) || (Input.GetKeyDown(KeyCode.Return) && (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)))) {
+            ScreenResolution.SetFullScreen(!Screen.fullScreen);
+            if (!Screen.fullScreen)
+                StartCoroutine(UpdateMonitorSize());
+        }
     }
 
-    void LoadScene(Scene scene, LoadSceneMode mode) {
-        if (LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk") != null)  crate = LuaScriptBinder.GetAlMighty(null, "CrateYourFrisk").Boolean;
-        else                                                              crate = false;
-    }
-
-    private IEnumerator IShakeScreen(object[] args) {
+    /// <summary>
+    /// Shakes the screen for a given amount of frames.
+    /// </summary>
+    /// <param name="args">Most coroutines have the same argument, which is a table of values.
+    /// This one should include, in order:
+    /// * float frames - The amount of frames the screenshake effect will be active for.
+    /// * float intensity - The amount of pixels the screen can move out of its original position at maximum.
+    /// * bool fade - True if the screenshake effect should be reduced over time, false otherwise.
+    /// </param>
+    /// <returns>All coroutines must return an IEnumerator object, don't mind it.</returns>
+    private IEnumerator IShakeScreen(IList<object> args) {
         float frames, intensity;
         bool fade;
 
@@ -208,49 +204,42 @@ public class GlobalControls : MonoBehaviour {
         try { intensity = (float)args[1]; } catch { throw new CYFException("The argument \"intensity\" must be a number."); }
         try { fade = (bool)args[2]; } catch { throw new CYFException("The argument \"fade\" must be a boolean."); }
 
-        Transform tf = Camera.main.transform;
-        Vector2 shift = new Vector2(0, 0), totalShift = new Vector2(0, 0);
+        Vector2 totalShift = new Vector2(0, 0);
         float frameCount = 0, intensityBasis = intensity;
         while (frameCount < frames) {
-            if (stopScreenShake) {
-                tf.position = new Vector3(tf.position.x - totalShift.x, tf.position.y - totalShift.y, tf.position.z);
-                UserDebugger.instance.transform.position = new Vector3(UserDebugger.instance.transform.position.x - totalShift.x,
-                                                                       UserDebugger.instance.transform.position.y - totalShift.y,
-                                                                       UserDebugger.instance.transform.position.z);
-                screenShaking = false;
-                yield break;
-            }
+            if (stopScreenShake)
+                break;
             if (fade)
                 intensity = intensityBasis * (1 - (frameCount / frames));
-            shift = new Vector2((Random.value - 0.5f) * 2 * intensity, (Random.value - 0.5f) * 2 * intensity);
+            Vector2 shift = new Vector2((Random.value - 0.5f) * 2 * intensity, (Random.value - 0.5f) * 2 * intensity);
 
-            if (UnitaleUtil.IsOverworld)
-                PlayerOverworld.instance.cameraShift = new Vector2(PlayerOverworld.instance.cameraShift.x + shift.x - totalShift.x, PlayerOverworld.instance.cameraShift.y + shift.y - totalShift.y);
-            else {
-                tf.position = new Vector3(tf.position.x + shift.x - totalShift.x, tf.position.y + shift.y - totalShift.y, tf.position.z);
-                UserDebugger.instance.transform.position = new Vector3(UserDebugger.instance.transform.position.x + shift.x - totalShift.x,
-                                                                       UserDebugger.instance.transform.position.y + shift.y - totalShift.y,
-                                                                       UserDebugger.instance.transform.position.z);
-            }
-            //print(totalShift + " + " + shift + " = " + (totalShift + shift));
+            Misc.MoveCamera(shift.x - totalShift.x, shift.y - totalShift.y);
             totalShift = shift;
             frameCount++;
             yield return 0;
         }
+        Misc.MoveCamera(-totalShift.x, -totalShift.y);
         screenShaking = false;
-        tf.position = new Vector3(tf.position.x - totalShift.x, tf.position.y - totalShift.y, tf.position.z);
-        if (!UnitaleUtil.IsOverworld)
-            UserDebugger.instance.transform.position = new Vector3(UserDebugger.instance.transform.position.x - totalShift.x,
-                                                                   UserDebugger.instance.transform.position.y - totalShift.y,
-                                                                   UserDebugger.instance.transform.position.z);
     }
 
+    /// <summary>
+    /// Starts the screen shaking coroutine.
+    /// </summary>
+    /// <param name="duration">The amount of frames the screenshake effect will be active for</param>
+    /// <param name="intensity">The amount of pixels the screen can move out of its original position at maximum.</param>
+    /// <param name="isIntensityDecreasing">True if the screenshake effect should be reduced over time, false otherwise.</param>
     public void ShakeScreen(float duration, float intensity, bool isIntensityDecreasing) {
-        if (!screenShaking) {
-            screenShaking = true;
-            StartCoroutine("IShakeScreen", new object[] { duration, intensity, isIntensityDecreasing });
-        }
+        if (screenShaking) return;
+        screenShaking   = true;
+        stopScreenShake = false;
+        StartCoroutine("IShakeScreen", new object[] { duration, intensity, isIntensityDecreasing });
     }
 
-    void OnApplicationQuit() { /*UnitaleUtil.closeFile();*/ }
+    /// <summary>
+    /// Only run when the application is closed.
+    /// </summary>
+    private void OnApplicationQuit() {
+        if (DiscordControls.isActive)
+            DiscordControls.discord.Dispose();
+    }
 }

@@ -1,5 +1,4 @@
-﻿using System;
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
@@ -16,22 +15,23 @@ public class ArenaManager : MonoBehaviour {
     public static Vector2 arenaCenter; // arena center, updated here to save computation time on doing it per frame
     [HideInInspector]
     public static LuaArenaStatus luaStatus { get; private set; } // The Lua Arena object on the C# side
-    public bool firstTurn = true, yup = false, falseInit = false;
+    public LuaSpriteController innerSprite; // inner part's sprite
+    public LuaSpriteController outerSprite; // outer part's sprite
 
     private RectTransform outer; // RectTransform of the slightly larger white box under the arena (it's the border).
     private RectTransform inner; // RectTransform of the inner part of the arena.
-    private int pxPerSecond = 100 * 10; // How many pixels per second the arena should resize and move
+    private const int pxPerSecond = 100 * 10; // How many pixels per second the arena should resize and move
 
-    private float currentWidth; // Current width of the arena as it is resizing
-    private float currentHeight; // Current height of the arena as it is resizing
-    private float currentX; // Current X of the arena as it is moving
-    private float currentY; // Current Y of the arena as it is moving
-    internal float newWidth; // Desired width of the arena; internal so the Lua Arena object may refer to it (lazy)
-    internal float newHeight; // Desired height of the arena; internal so the Lua Arena object may refer to it (lazy)
-    internal float newX; // Desired x of the arena; internal so the Lua Arena object may refer to it (lazy)
-    internal float newY; // Desired y of the arena; internal so the Lua Arena object may refer to it (lazy)
+    public float currentWidth; // Current width of the arena as it is resizing
+    public float currentHeight; // Current height of the arena as it is resizing
+    public float currentX; // Current X of the arena as it is moving
+    public float currentY; // Current Y of the arena as it is moving
+    public float desiredWidth; // Desired width of the arena; internal so the Lua Arena object may refer to it (lazy)
+    public float desiredHeight; // Desired height of the arena; internal so the Lua Arena object may refer to it (lazy)
+    public float desiredX; // Desired x of the arena; internal so the Lua Arena object may refer to it (lazy)
+    public float desiredY; // Desired y of the arena; internal so the Lua Arena object may refer to it (lazy)
+    public bool showWhenWaveEnds = false; // Used to know if we need to run Arena.Show() at the end of a wave
     private bool movePlayer;
-    private int errCount = 1;
 
     /// <summary>
     /// Initialization.
@@ -41,38 +41,30 @@ public class ArenaManager : MonoBehaviour {
         if (instance != null)
             throw new CYFException("Currently, the ArenaManager may only be attached to one object.");
 
-        inner = GameObject.Find("arena").GetComponent<RectTransform>();
-        outer = inner.parent.GetComponent<RectTransform>();
-        /*outer = GameObject.Find("arena_border_outer").GetComponent<RectTransform>();
-        inner = GameObject.Find("arena").GetComponent<RectTransform>();*/
-        newWidth = currentWidth;
-        newHeight = currentHeight;
+        outer = GetComponent<RectTransform>();
+        inner = outer.GetChild(outer.childCount - 1).GetComponent<RectTransform>();
+        innerSprite = LuaSpriteController.GetOrCreate(GameObject.Find("arena"));
+        outerSprite = LuaSpriteController.GetOrCreate(GameObject.Find("arena_border_outer"));
+        desiredX = outer.position.x;
+        desiredY = outer.position.y;
+        desiredWidth = currentWidth;
+        desiredHeight = currentHeight;
         instance = this;
         luaStatus = new LuaArenaStatus();
     }
 
-    private void Start() { LateUpdater.lateActions.Add(LateStart); }
-
-    private void LateStart() {
-        try {
-            if (inner == null || outer == null) {
-                //UnitaleUtil.WriteInLogAndDebugger(outer == null && inner == null ? "outer & inner = null" : (outer == null ? "outer == null" : "inner == null"));
-                inner = GameObject.Find("arena").GetComponent<RectTransform>();
-                outer = inner.parent.GetComponent<RectTransform>();
-            }
-            arenaAbs = new Rect(inner.position.x - inner.sizeDelta.x / 2, inner.position.y - inner.sizeDelta.y / 2, inner.rect.width, inner.rect.height);
-            arenaCenter = RTUtil.AbsCenterOf(inner);
-            newX = currentX = 320;
-            newY = currentY = 90;
-            currentWidth = inner.rect.width;
-            currentHeight = inner.rect.height;
-            basisCoordinates = arenaCenter;
-        } catch {
-            LateUpdater.lateActions.Add(LateStart);
-            UnitaleUtil.WriteInLogAndDebugger("Error during the Arena's initialization! (#" + errCount++ + ")");
+    private void Start() {
+        if (inner == null || outer == null) {
+            inner = GameObject.Find("arena").GetComponent<RectTransform>();
+            outer = inner.parent.GetComponent<RectTransform>();
         }
-        //outer.localPosition = new Vector3(0, -50, 0);
-        //outer.position = new Vector3(320, 90, outer.position.z);
+        arenaAbs = new Rect(inner.position.x - inner.sizeDelta.x / 2, inner.position.y - inner.sizeDelta.y / 2, inner.rect.width, inner.rect.height);
+        arenaCenter = RTUtil.AbsCenterOf(inner);
+        desiredX = currentX = 320;
+        desiredY = currentY = 90;
+        currentWidth = inner.rect.width;
+        currentHeight = inner.rect.height;
+        basisCoordinates = arenaCenter;
     }
 
     /// <summary>
@@ -81,8 +73,8 @@ public class ArenaManager : MonoBehaviour {
     /// <param name="newWidth">Desired width of the arena</param>
     /// <param name="newHeight">Desired height of the arena</param>
     public void Resize(float newWidth, float newHeight) {
-        this.newWidth = newWidth; 
-        this.newHeight = newHeight;
+        desiredWidth = newWidth;
+        desiredHeight = newHeight;
     }
 
     /// <summary>
@@ -90,10 +82,11 @@ public class ArenaManager : MonoBehaviour {
     /// </summary>
     /// <param name="newX">Desired x of the arena</param>
     /// <param name="newY">Desired y of the arena</param>
-    public void Move(float newX, float newY, bool movePlayer = true) {
-        this.newX += newX;
-        this.newY += newY;
-        this.movePlayer = movePlayer;
+    /// <param name="newMovePlayer"></param>
+    public void Move(float newX, float newY, bool newMovePlayer = true) {
+        desiredX += newX;
+        desiredY += newY;
+        movePlayer = newMovePlayer;
     }
 
     /// <summary>
@@ -101,10 +94,11 @@ public class ArenaManager : MonoBehaviour {
     /// </summary>
     /// <param name="newX">Desired x of the arena</param>
     /// <param name="newY">Desired y of the arena</param>
-    public void MoveTo(float newX, float newY, bool movePlayer = true) {
-        this.newX = newX;
-        this.newY = newY;
-        this.movePlayer = movePlayer;
+    /// <param name="newMovePlayer"></param>
+    public void MoveTo(float newX, float newY, bool newMovePlayer = true) {
+        desiredX = newX;
+        desiredY = newY;
+        movePlayer = newMovePlayer;
     }
 
     /// <summary>
@@ -114,12 +108,13 @@ public class ArenaManager : MonoBehaviour {
     /// <param name="newY">Desired y of the arena</param>
     /// <param name="newWidth">Desired width of the arena</param>
     /// <param name="newHeight">Desired height of the arena</param>
-    public void MoveAndResize(float newX, float newY, float newWidth, float newHeight, bool movePlayer = true) {
-        this.newX += newX;
-        this.newY += newY;
-        this.newWidth = newWidth;
-        this.newHeight = newHeight;
-        this.movePlayer = movePlayer;
+    /// <param name="newMovePlayer"></param>
+    public void MoveAndResize(float newX, float newY, float newWidth, float newHeight, bool newMovePlayer = true) {
+        desiredX += newX;
+        desiredY += newY;
+        desiredWidth = newWidth;
+        desiredHeight = newHeight;
+        movePlayer = newMovePlayer;
     }
 
     /// <summary>
@@ -129,108 +124,101 @@ public class ArenaManager : MonoBehaviour {
     /// <param name="newY">Desired y of the arena</param>
     /// <param name="newWidth">Desired width of the arena</param>
     /// <param name="newHeight">Desired height of the arena</param>
-    public void MoveToAndResize(float newX, float newY, float newWidth, float newHeight, bool movePlayer = true) {
-        this.newX = newX;
-        this.newY = newY;
-        this.newWidth = newWidth;
-        this.newHeight = newHeight;
-        this.movePlayer = movePlayer;
+    /// <param name="newMovePlayer"></param>
+    public void MoveToAndResize(float newX, float newY, float newWidth, float newHeight, bool newMovePlayer = true) {
+        desiredX = newX;
+        desiredY = newY;
+        desiredWidth = newWidth;
+        desiredHeight = newHeight;
+        movePlayer = newMovePlayer;
     }
 
     /// <summary>
     /// Set the desired size of this arena immediately, without the animation.
     /// </summary>
-    /// <param name="newx">Desired width of the arena</param>
-    /// <param name="newy">Desired height of the arena</param>
+    /// <param name="newWidth">Desired width of the arena</param>
+    /// <param name="newHeight">Desired height of the arena</param>
     public void ResizeImmediate(float newWidth, float newHeight) {
         Resize(newWidth, newHeight);
-        currentWidth = this.newWidth;
-        currentHeight = this.newHeight;
-        applyChanges(currentX, currentY, currentWidth, currentHeight);
+        currentWidth = desiredWidth;
+        currentHeight = desiredHeight;
+        ApplyChanges(currentX, currentY, currentWidth, currentHeight);
     }
 
     /// <summary>
     /// Set the desired position of this arena immediately, without the animation.
     /// </summary>
-    /// <param name="newx">Desired x of the arena</param>
-    /// <param name="newy">Desired y of the arena</param>
-    public void MoveImmediate(float newX, float newY, bool movePlayer = true) {
-        Move(newX, newY, movePlayer);
-        currentX = this.newX;
-        currentY = this.newY;
-        applyChanges(currentX, currentY, currentWidth, currentHeight);
+    /// <param name="newX">Desired x of the arena</param>
+    /// <param name="newY">Desired y of the arena</param>
+    /// <param name="newMovePlayer"></param>
+    public void MoveImmediate(float newX, float newY, bool newMovePlayer = true) {
+        Move(newX, newY, newMovePlayer);
+        currentX = desiredX;
+        currentY = desiredY;
+        ApplyChanges(currentX, currentY, currentWidth, currentHeight);
     }
 
     /// <summary>
     /// Set the desired position of this arena immediately, without the animation.
     /// </summary>
-    /// <param name="newx">Desired x of the arena</param>
-    /// <param name="newy">Desired y of the arena</param>
-    public void MoveToImmediate(float newX, float newY, bool movePlayer = true) {
-        MoveTo(newX, newY, movePlayer);
-        currentX = this.newX;
-        currentY = this.newY;
-        applyChanges(currentX, currentY, currentWidth, currentHeight);
+    /// <param name="newX">Desired x of the arena</param>
+    /// <param name="newY">Desired y of the arena</param>
+    /// <param name="newMovePlayer"></param>
+    public void MoveToImmediate(float newX, float newY, bool newMovePlayer = true) {
+        MoveTo(newX, newY, newMovePlayer);
+        currentX = desiredX;
+        currentY = desiredY;
+        ApplyChanges(currentX, currentY, currentWidth, currentHeight);
     }
 
     /// <summary>
     /// Set the desired position and size of this arena immediately, without the animation.
     /// </summary>
-    /// <param name="newx">Desired width of the arena</param>
-    /// <param name="newy">Desired height of the arena</param>
+    /// <param name="newX">Desired width of the arena</param>
+    /// <param name="newY">Desired height of the arena</param>
     /// <param name="newWidth">Desired width of the arena</param>
     /// <param name="newHeight">Desired height of the arena</param>
-    public void MoveAndResizeImmediate(float newX, float newY, float newWidth, float newHeight, bool movePlayer = true) {
-        MoveAndResize(newX, newY, newWidth, newHeight, movePlayer);
-        currentX = this.newX;
-        currentY = this.newY;
-        currentWidth = this.newWidth;
-        currentHeight = this.newHeight;
-        applyChanges(currentX, currentY, currentWidth, currentHeight);
+    /// <param name="newMovePlayer"></param>
+    public void MoveAndResizeImmediate(float newX, float newY, float newWidth, float newHeight, bool newMovePlayer = true) {
+        MoveAndResize(newX, newY, newWidth, newHeight, newMovePlayer);
+        currentX = desiredX;
+        currentY = desiredY;
+        currentWidth = desiredWidth;
+        currentHeight = desiredHeight;
+        ApplyChanges(currentX, currentY, currentWidth, currentHeight);
     }
 
     /// <summary>
     /// Set the desired position and size of this arena immediately, without the animation.
     /// </summary>
-    /// <param name="newx">Desired width of the arena</param>
-    /// <param name="newy">Desired height of the arena</param>
+    /// <param name="newX">Desired width of the arena</param>
+    /// <param name="newY">Desired height of the arena</param>
     /// <param name="newWidth">Desired width of the arena</param>
     /// <param name="newHeight">Desired height of the arena</param>
-    public void MoveToAndResizeImmediate(float newX, float newY, float newWidth, float newHeight, bool movePlayer = true) {
-        MoveToAndResize(newX, newY, newWidth, newHeight, movePlayer);
-        currentX = this.newX;
-        currentY = this.newY;
-        currentWidth = this.newWidth;
-        currentHeight = this.newHeight;
-        applyChanges(currentX, currentY, currentWidth, currentHeight);
+    /// <param name="newMovePlayer"></param>
+    public void MoveToAndResizeImmediate(float newX, float newY, float newWidth, float newHeight, bool newMovePlayer = true) {
+        MoveToAndResize(newX, newY, newWidth, newHeight, newMovePlayer);
+        currentX = desiredX;
+        currentY = desiredY;
+        currentWidth = desiredWidth;
+        currentHeight = desiredHeight;
+        ApplyChanges(currentX, currentY, currentWidth, currentHeight);
     }
-    
+
     /// <summary>
     /// Makes the arena invisible, but it will stay active.
     /// </summary>
     public void Hide() {
-        inner.GetComponent<Image>().color = new Color(inner.GetComponent<Image>().color.r,
-                                                      inner.GetComponent<Image>().color.g,
-                                                      inner.GetComponent<Image>().color.b,
-                                                      0f);
-        outer.GetComponent<Image>().color = new Color(outer.GetComponent<Image>().color.r,
-                                                      outer.GetComponent<Image>().color.g,
-                                                      outer.GetComponent<Image>().color.b,
-                                                      0f);
+        inner.GetComponent<Image>().enabled = false;
+        outer.GetComponent<Image>().enabled = false;
     }
-    
+
     /// <summary>
     /// Makes the arena visible, if it was previously set invisible with Hide().
     /// </summary>
     public void Show() {
-        inner.GetComponent<Image>().color = new Color(inner.GetComponent<Image>().color.r,
-                                                      inner.GetComponent<Image>().color.g,
-                                                      inner.GetComponent<Image>().color.b,
-                                                      1f);
-        outer.GetComponent<Image>().color = new Color(outer.GetComponent<Image>().color.r,
-                                                      outer.GetComponent<Image>().color.g,
-                                                      outer.GetComponent<Image>().color.b,
-                                                      1f);
+        inner.GetComponent<Image>().enabled = true;
+        outer.GetComponent<Image>().enabled = true;
     }
 
     /// <summary>
@@ -239,10 +227,10 @@ public class ArenaManager : MonoBehaviour {
     /// <returns>0.0 if the changes has just started, 1.0 if it has finished.</returns>
     public float getProgress() {
         // depending on whether arena gets larger or smaller or its movement, adjust division order
-        float widthFrac = newWidth > currentWidth ? currentWidth / newWidth : newWidth / currentWidth;
-        float heightFrac = newHeight > currentHeight ? currentHeight / newHeight : newHeight / currentHeight;
-        float xFrac = newX > currentX ? currentX / newX : newX / currentX;
-        float yFrac = newY > currentY ? currentY / newY : newY / currentY;
+        float widthFrac = desiredWidth > currentWidth ? currentWidth / desiredWidth : desiredWidth / currentWidth;
+        float heightFrac = desiredHeight > currentHeight ? currentHeight / desiredHeight : desiredHeight / currentHeight;
+        float xFrac = desiredX > currentX ? currentX / desiredX : desiredX / currentX;
+        float yFrac = desiredY > currentY ? currentY / desiredY : desiredY / currentY;
         return Mathf.Min(widthFrac, heightFrac, xFrac, yFrac);
     }
 
@@ -251,85 +239,48 @@ public class ArenaManager : MonoBehaviour {
     /// </summary>
     /// <returns>true if it hasn't reached the intended size yet, false otherwise</returns>
     public bool isResizeInProgress() {
-        return currentWidth != newWidth || currentHeight != newHeight;
+        return currentWidth != desiredWidth || currentHeight != desiredHeight;
     }
 
     public bool isMoveInProgress() {
-        return currentX != newX || currentX != newX;
+        return currentX != desiredX || currentX != desiredX;
     }
 
     /// <summary>
     /// Resizes the arena if the desired size is different from the current size.
     /// </summary>
     private void Update() {
-        if (firstTurn) {
-            if (!falseInit) {
-                Vector2[] enemyPositions = GameObject.FindObjectOfType<EnemyEncounter>().enemyPositions;
-                EnemyController[] rts = GameObject.FindObjectsOfType<EnemyController>();
-                
-                bool nope = false;
-                for (int i = 0; i < rts.Length; i++)
-                    if (rts[i].GetComponent<RectTransform>().position.y != 231 + enemyPositions[rts.Length - i - 1].y)
-                        nope = true;
-                if (!nope)
-                    falseInit = true;
-            }
-            if (yup)        firstTurn = false;
-            if (falseInit)  yup = true;
-            return;
-        }
-        //if (UIController.instance.state != UIController.UIState.DEFENDING && UIController.instance.state != UIController.UIState.ENEMYDIALOGUE)
-        //    outer.position = new Vector3(320, 90, outer.position.z);
-        
         // do not resize the arena if the state is frozen with PAUSE
-        if (UIController.instance.frozenState != UIController.UIState.PAUSE)
+        if (!UIController.instance || UIController.instance.frozenState != "PAUSE")
             return;
-        
-        if (currentWidth == newWidth && currentHeight == newHeight && currentX == newX && currentY == newY)
-            return;
-        if (currentWidth < newWidth) {
-            currentWidth += pxPerSecond * Time.deltaTime;
-            if (currentWidth >= newWidth)
-                currentWidth = newWidth;
-        } else if (currentWidth > newWidth) {
-            currentWidth -= pxPerSecond * Time.deltaTime;
-            if (currentWidth <= newWidth)
-                currentWidth = newWidth;
+
+        if (currentWidth != desiredWidth) {
+            float sign = Mathf.Sign(desiredWidth - currentWidth);
+            currentWidth += sign * pxPerSecond * Time.deltaTime;
+            if (Mathf.Sign(desiredWidth - currentWidth) != sign)
+                currentWidth = desiredWidth;
+        }
+        if (currentHeight != desiredHeight) {
+            float sign = Mathf.Sign(desiredHeight - currentHeight);
+            currentHeight += sign * pxPerSecond * Time.deltaTime;
+            if (Mathf.Sign(desiredHeight - currentHeight) != sign)
+                currentHeight = desiredHeight;
         }
 
-        if (currentHeight < newHeight) {
-            currentHeight += pxPerSecond * Time.deltaTime;
-            if (currentHeight >= newHeight)
-                currentHeight = newHeight;
-        } else if (currentHeight > newHeight) {
-            currentHeight -= pxPerSecond * Time.deltaTime;
-            if (currentHeight <= newHeight)
-                currentHeight = newHeight;
+        if (currentX != desiredX) {
+            float sign = Mathf.Sign(desiredX - currentX);
+            currentX += sign * pxPerSecond * Time.deltaTime / 2;
+            if (Mathf.Sign(desiredX - currentX) != sign)
+                currentX = desiredX;
+        }
+        if (currentY != desiredY) {
+            float sign = Mathf.Sign(desiredY - currentY);
+            currentY += sign * pxPerSecond * Time.deltaTime / 2;
+            if (Mathf.Sign(desiredY - currentY) != sign)
+                currentY = desiredY;
         }
 
-        if (!firstTurn) {
-            if (currentX < newX) {
-                currentX += pxPerSecond * Time.deltaTime / 2;
-                if (currentX >= newX)
-                    currentX = newX;
-            } else if (currentX > newX) {
-                currentX -= pxPerSecond * Time.deltaTime / 2;
-                if (currentX <= newX)
-                    currentX = newX;
-            }
-
-            if (currentY < newY) {
-                currentY += pxPerSecond * Time.deltaTime / 2;
-                if (currentY >= newY)
-                    currentY = newY;
-            } else if (currentY > newY) {
-                currentY -= pxPerSecond * Time.deltaTime / 2;
-                if (currentY <= newY)
-                    currentY = newY;
-            }
-        }
-
-        applyChanges(currentX, currentY, currentWidth, currentHeight);
+        ApplyChanges(currentX, currentY, currentWidth, currentHeight);
         if (outer.position == new Vector3(0, 0, outer.position.z))
             outer.position = new Vector3(320, 90, outer.position.z);
     }
@@ -337,28 +288,26 @@ public class ArenaManager : MonoBehaviour {
     /// <summary>
     /// Takes care of actually applying the resize and updating the arena's rectangle.
     /// </summary>
+    /// <param name="arenaX"></param>
+    /// <param name="arenaY"></param>
     /// <param name="arenaWidth">New width</param>
     /// <param name="arenaHeight">New height</param>
-    private void applyChanges(float arenaX, float arenaY, float arenaWidth, float arenaHeight, bool first = false) {
+    private void ApplyChanges(float arenaX, float arenaY, float arenaWidth, float arenaHeight) {
         inner.sizeDelta = new Vector2(arenaWidth, arenaHeight);
         outer.sizeDelta = new Vector2(arenaWidth + 10, arenaHeight + 10);
-        if (movePlayer)
+        if (movePlayer && UIController.instance.state != "ACTIONSELECT")
             PlayerController.instance.MoveDirect(new Vector2(arenaX - outer.position.x, arenaY - outer.position.y));
-        if (!firstTurn) {
-            outer.position = new Vector2(arenaX, arenaY);
-            outer.localPosition = new Vector3(outer.localPosition.x, outer.localPosition.y, 0);
-            arenaAbs.x = inner.position.x - inner.sizeDelta.x / 2;
-            arenaAbs.y = inner.position.y - inner.sizeDelta.y / 2;
-        }
+        outer.position = new Vector2(arenaX, arenaY);
+        outer.localPosition = new Vector3(outer.localPosition.x, outer.localPosition.y, 0);
+        arenaAbs.x = inner.position.x - inner.sizeDelta.x / 2;
+        arenaAbs.y = inner.position.y - inner.sizeDelta.y / 2;
         arenaAbs.width = inner.rect.width;
         arenaAbs.height = inner.rect.height;
         arenaCenter = new Vector2(inner.transform.position.x, inner.transform.position.y);
     }
 
-    public void resetArena() {
-        if (!firstTurn)
-            MoveToImmediate(320, 90, false);
+    public void ResetArena() {
+        MoveToImmediate(320, 90, false);
         Resize(UIWidth, UIHeight);
-        Show();
     }
 }

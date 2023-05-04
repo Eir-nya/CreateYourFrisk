@@ -1,142 +1,236 @@
 ﻿using UnityEngine;
 using System;
-using System.Diagnostics;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using MoonSharp.Interpreter;
 
 public class LuaTextManager : TextManager {
     private GameObject container;
+    private bool removed;
+    private bool hidden;
     private GameObject containerBubble;
     private RectTransform speechThing;
     private RectTransform speechThingShadow;
     private DynValue bubbleLastVar = DynValue.NewNil();
-    private bool bubble = true;
+    public bool bubble;
     private int framesWait = 60;
-    private int countFrames = 0;
-    private int _textWidth;
+    private int countFrames;
     private int _bubbleHeight = -1;
     private BubbleSide bubbleSide = BubbleSide.NONE;
-    private ProgressMode progress = ProgressMode.AUTO;
-    private Color textColor;
+    [SerializeField] private ProgressMode progress = ProgressMode.AUTO;
     private float xScale = 1;
     private float yScale = 1;
-    
-    public bool isactive {
+    private string _linePrefix = "";
+    [MoonSharpHidden] public bool autoSetLayer = true;
+    private readonly Dictionary<string, DynValue> vars = new Dictionary<string, DynValue>();
+    [MoonSharpHidden] public bool needFontReset = false;
+    [MoonSharpHidden] public bool noAutoLineBreak = false;
+    [MoonSharpHidden] public bool isMainTextObject = false;
+    [MoonSharpHidden] public bool noSelfAdvance = false;
+
+    // Whether we correct the text's display (position, scale) to not look jagged
+    private static bool globalAdjustTextPos {
         get {
-            return (container != null && containerBubble != null && speechThing != null && speechThingShadow != null);
+            if (GlobalControls.isInFight)
+                return EnemyEncounter.script.GetVar("adjusttextdisplay").Boolean;
+            return false;
+        }
+    }
+    private bool adjustTextDisplaySet = false;
+    private bool _adjustTextDisplay = false;
+    public bool adjustTextDisplay {
+        get {
+            if (adjustTextDisplaySet)
+                return _adjustTextDisplay;
+            return globalAdjustTextPos;
+        }
+        set {
+            adjustTextDisplaySet = true;
+            _adjustTextDisplay = value;
+            Move(0, 0);
+            Scale(xscale, yscale);
         }
     }
 
-    enum BubbleSide { LEFT = 0, DOWN = 90, RIGHT = 180, UP = 270, NONE = -1 }
-    enum ProgressMode { AUTO, MANUAL, NONE }
+    public bool isactive {
+        get { return !removed && !hidden; }
+    }
+
+    // The rotation of the text object
+    public new float rotation {
+        get { return container.transform.eulerAngles.z; }
+        set {
+            // We mod the value from 0 to 360 because angles are between 0 and 360 normally
+            internalRotation.z = Math.Mod(value, 360);
+            container.transform.eulerAngles = internalRotation;
+        }
+    }
+
+    private enum BubbleSide { LEFT = 0, DOWN = 90, RIGHT = 180, UP = 270, NONE = -1 }
+    private enum ProgressMode { AUTO, MANUAL, NONE }
+
+    public bool deleteWhenFinished = true;
+
+    public GameObject GetContainer() {
+        return container;
+    }
 
     protected override void Awake() {
-        base.Awake();
-        if (!UnitaleUtil.IsOverworld)
-            transform.parent.SetParent(GameObject.Find("TopLayer").transform);
         container = transform.parent.gameObject;
-        containerBubble = UnitaleUtil.GetChildPerName(container.transform, "BubbleContainer").gameObject;
-        speechThing = UnitaleUtil.GetChildPerName(containerBubble.transform, "SpeechThing", false, true).GetComponent<RectTransform>();
-        speechThingShadow = UnitaleUtil.GetChildPerName(containerBubble.transform, "SpeechThingShadow", false, true).GetComponent<RectTransform>();
+        base.Awake();
+        if (!UnitaleUtil.IsOverworld && autoSetLayer)
+            transform.parent.SetParent(GameObject.Find("TopLayer").transform);
+
+        Transform bubbleTransform = UnitaleUtil.GetChildPerName(container.transform, "BubbleContainer", true);
+        if (bubbleTransform != null) {
+            containerBubble = bubbleTransform.gameObject;
+            speechThing = UnitaleUtil.GetChildPerName(containerBubble.transform, "SpeechThing", false, true).GetComponent<RectTransform>();
+            speechThingShadow = UnitaleUtil.GetChildPerName(containerBubble.transform, "SpeechThingShadow", false, true).GetComponent<RectTransform>();
+        }
     }
 
     protected override void Update() {
+        if (hidden) return;
         base.Update();
 
+        if (!isactive || textQueue == null || textQueue.Length == 0) return;
         //Next line/EOF check
-        if (isactive) {
-            if (progress == ProgressMode.MANUAL) {
+        switch (progress) {
+            case ProgressMode.MANUAL: {
                 if (GlobalControls.input.Confirm == UndertaleInput.ButtonState.PRESSED && LineComplete())
                     NextLine();
-            } else if (progress == ProgressMode.AUTO) {
+                break;
+            }
+            case ProgressMode.AUTO: {
                 if (LineComplete())
                     if (countFrames == framesWait) {
                         NextLine();
                         countFrames = 0;
                     } else
                         countFrames++;
+                break;
             }
-            if (base.CanAutoSkipAll() || base.CanAutoSkipThis())
-                NextLine();
-            if (CanSkip() && !LineComplete() && GlobalControls.input.Cancel == UndertaleInput.ButtonState.PRESSED)
-                DoSkipFromPlayer();
         }
+        if ((CanAutoSkipAll() && !noSelfAdvance) || CanAutoSkipThis())
+            NextLine();
+        if (CanSkip() && !LineComplete() && GlobalControls.input.Cancel == UndertaleInput.ButtonState.PRESSED)
+            DoSkipFromPlayer();
     }
-    
+
     // Used to test if a text object still exists.
     private void CheckExists() {
-        if (!isactive)
+        if (removed)
             throw new CYFException("Attempt to perform action on removed text object.");
     }
-    
-    // Shortcut to `DestroyText()`
-    public void Remove() { DestroyText(true); }
-    
+
+    public void Remove() { DestroyText(); }
+    public void DestroyText() {
+        if (!removed) Destroy(transform.parent.gameObject);
+        removed = true;
+    }
+
+    [MoonSharpHidden] public void HideTextObject() {
+        DestroyChars();
+        hidden = true;
+    }
+
     private void ResizeBubble() {
         float effectiveBubbleHeight = bubbleHeight != -1 ? bubbleHeight < 16 ? 40 : bubbleHeight + 24 : UnitaleUtil.CalcTextHeight(this) < 16 ? 40 : UnitaleUtil.CalcTextHeight(this) + 24;
         containerBubble.transform.GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 20, effectiveBubbleHeight);                                                      //To set the borders
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "BackHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 20, effectiveBubbleHeight - 20 * 2);    //BackHorz
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "BackVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 20, effectiveBubbleHeight);             //BackVert
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 16, effectiveBubbleHeight - 16 * 2);  //CenterHorz
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 16, effectiveBubbleHeight - 4);       //CenterVert
-        SetSpeechThingPositionAndSide(bubbleSide.ToString(), bubbleLastVar);
+        if (UnitaleUtil.GetChildPerName(containerBubble.transform, "BackHorz")) {
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "BackHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 20, effectiveBubbleHeight - 20 * 2);    //BackHorz
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "BackVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 20, effectiveBubbleHeight);             //BackVert
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 16, effectiveBubbleHeight - 16 * 2);  //CenterHorz
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 16, effectiveBubbleHeight - 4);       //CenterVert
+        }
+        SetTail(bubbleSide.ToString(), bubbleLastVar);
     }
-    
+
+    public Vector2 GetBubbleSize() {
+        return containerBubble.transform.GetComponent<RectTransform>().sizeDelta;
+    }
+
+    public Vector2 GetBubbleShift() {
+        return containerBubble.GetComponent<RectTransform>().localPosition;
+    }
+
+    public DynValue text {
+        get {
+            CheckExists();
+            DynValue[] texts = new DynValue[textQueue.Length];
+            for (int i = 0; i < textQueue.Length; i++)
+                texts[i] = DynValue.NewString(textQueue[i].Text);
+            return DynValue.NewTable(caller.script, texts);
+        }
+    }
+
     public string progressmode {
         get {
             CheckExists();
             return progress.ToString();
         }
         set {
+            CheckExists();
             try {
-                CheckExists();
                 progress = (ProgressMode)Enum.Parse(typeof(ProgressMode), value.ToUpper());
             } catch {
-                throw new CYFException("text.progressmode can only have either \"AUTO\", \"MANUAL\" or \"NONE\", but you entered \"" + value.ToUpper() + "\".");
+                if (value != null) throw new CYFException("text.progressmode can only have either \"AUTO\", \"MANUAL\" or \"NONE\", but you entered \"" + value.ToUpper() + "\".");
+                                   throw new CYFException("text.progressmode can only have either \"AUTO\", \"MANUAL\" or \"NONE\", but you set it to a nil value.");
             }
         }
     }
 
-    public int x {
+    public float x {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.localPosition.x);
+            return container.transform.localPosition.x;
         }
         set { MoveTo(value, y); }
     }
 
-    public int y {
+    public float y {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.localPosition.y);
+            return container.transform.localPosition.y;
         }
         set { MoveTo(x, value); }
     }
 
-    public int absx {
+    public float absx {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.position.x);
+            return container.transform.position.x;
         }
         set { MoveToAbs(value, absy); }
     }
 
-    public int absy {
+    public float absy {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.position.y);
+            return container.transform.position.y;
         }
-        set { MoveTo(absx, value); }
+        set { MoveToAbs(absx, value); }
     }
 
-    public int textMaxWidth {
+    public int width {
         get {
             CheckExists();
-            return _textWidth;
+            return _textMaxWidth;
         }
         set {
             CheckExists();
-            _textWidth = value < 16 ? 16 : value;
+            _textMaxWidth = value < 16 ? 16 : value;
+        }
+    }
+    public int textMaxWidth {
+        get {
+            CheckExists();
+            return _textMaxWidth;
+        }
+        set {
+            CheckExists();
+            _textMaxWidth = value < 16 ? 16 : value;
         }
     }
 
@@ -150,29 +244,39 @@ public class LuaTextManager : TextManager {
             _bubbleHeight = value == -1 ? -1 : value < 40 ? 40 : value;
         }
     }
-    
+
     public float xscale {
-        get { return xScale; }
+        get {
+            CheckExists();
+            return xScale;
+        }
         set {
+            CheckExists();
             xScale = value;
             Scale(xScale, yScale);
         }
     }
-    
+
     public float yscale {
-        get { return yScale; }
+        get {
+            CheckExists();
+            return yScale;
+        }
         set {
+            CheckExists();
             yScale = value;
             Scale(xScale, yScale);
         }
     }
-    
+
     public void Scale(float xs, float ys) {
         CheckExists();
         xScale = xs;
         yScale = ys;
-        
-        container.gameObject.GetComponent<RectTransform>().localScale = new Vector3(xs, ys, 1.0f);
+
+        container.transform.localScale = new Vector3(xs, ys, 1.0f);
+        if (adjustTextDisplay)
+            PostScaleHandling();
     }
 
     public string layer {
@@ -180,67 +284,94 @@ public class LuaTextManager : TextManager {
             CheckExists();
             if (!container.transform.parent.name.Contains("Layer"))
                 return "spriteObject";
-            return container.transform.parent.name.Substring(0, transform.parent.name.Length - 5);
+            return container.transform.parent.name.Substring(0, container.transform.parent.name.Length - 5);
         }
         set {
             CheckExists();
-            Transform parent = container.transform.parent;
-            try { container.transform.SetParent(GameObject.Find(value + "Layer").transform); } 
+            try {
+                SetParent(GameObject.Find(value + "Layer").transform);
+                foreach (Transform child in container.transform) {
+                    MaskImage childmask = child.gameObject.GetComponent<MaskImage>();
+                    if (childmask != null)
+                        childmask.inverted = false;
+                }
+            }
             catch { throw new CYFException("The layer \"" + value + "\" doesn't exist."); }
         }
     }
-    
+
+    public void SendToTop() {
+        CheckExists();
+        container.transform.SetAsLastSibling();
+    }
+
+    public void SendToBottom() {
+        CheckExists();
+        container.transform.SetAsFirstSibling();
+    }
+
     public void MoveBelow(LuaTextManager otherText) {
         CheckExists();
-        if (otherText == null || !otherText.isactive)
-            throw new CYFException("The text object passed as an argument is nil or inactive.");
-        else if (this.transform.parent.parent != otherText.transform.parent.parent)
-            UnitaleUtil.WriteInLogAndDebugger("[WARN]You can't change the order of two text objects without the same parent.");
+        if (otherText == null || !otherText.isactive)                     throw new CYFException("The text object passed as an argument is nil or inactive.");
+        if (transform.parent.parent != otherText.transform.parent.parent) UnitaleUtil.Warn("You can't change the order of two text objects without the same parent.");
         else {
-            try { this.transform.parent.SetSiblingIndex(otherText.transform.parent.GetSiblingIndex()); }
+            try { transform.parent.SetSiblingIndex(otherText.transform.parent.GetSiblingIndex()); }
             catch { throw new CYFException("Error while calling text.MoveBelow."); }
         }
     }
-    
+
     public void MoveAbove(LuaTextManager otherText) {
         CheckExists();
-        if (otherText == null || !otherText.isactive)
-            throw new CYFException("The text object passed as an argument is nil or inactive.");
-        else if (this.transform.parent.parent != otherText.transform.parent.parent)
-            UnitaleUtil.WriteInLogAndDebugger("[WARN]You can't change the order of two text objects without the same parent.");
+        if (otherText == null || !otherText.isactive)                     throw new CYFException("The text object passed as an argument is nil or inactive.");
+        if (transform.parent.parent != otherText.transform.parent.parent) UnitaleUtil.Warn("You can't change the order of two text objects without the same parent.");
         else {
-            try { this.transform.parent.SetSiblingIndex(otherText.transform.parent.GetSiblingIndex() + 1); }
+            try { transform.parent.SetSiblingIndex(otherText.transform.parent.GetSiblingIndex() + 1); }
             catch { throw new CYFException("Error while calling text.MoveAbove."); }
         }
     }
 
-    public Color _color = Color.white;
-    public bool hasColorBeenSet = false;
-    public bool hasAlphaBeenSet = false;
+    public void ResetColor(bool resetAlpha = false) {
+        CheckExists();
+        if (resetAlpha)
+            ResetAlpha();
+        color = new[] { fontDefaultColor.r, fontDefaultColor.g, fontDefaultColor.b };
+        textColorSet = false;
+    }
+
+    public void ResetAlpha() {
+        CheckExists();
+        alpha = fontDefaultColor.a;
+        textAlphaSet = false;
+    }
+
+    [MoonSharpHidden] public Color _color = Color.white;
+    [MoonSharpHidden] public bool textColorSet, textAlphaSet;
     // The color of the text. It uses an array of three floats between 0 and 1
     public float[] color {
-        get { return new float[] { _color.r, _color.g, _color.b }; }
+        get {
+            CheckExists();
+            return new[] { _color.r, _color.g, _color.b };
+        }
         set {
             CheckExists();
-            // If we don't have three floats, we throw an error
-            if (value.Length == 3)      _color = new Color(value[0], value[1], value[2], alpha);
-            else if (value.Length == 4) _color = new Color(value[0], value[1], value[2], value[3]);
-            else                        throw new CYFException("You need 3 or 4 numeric values when setting a text's color.");
+            if (value == null)
+                throw new CYFException("text.color can not be set to a nil value.");
+            if (value.Length < 3 || value.Length > 4)
+                throw new CYFException("You need 3 or 4 numeric values when setting a text's color.");
 
-            hasColorBeenSet = true;
-            hasAlphaBeenSet = false;
+            _color.r = value[0];
+            _color.g = value[1];
+            _color.b = value[2];
+            if (value.Length == 4)
+                alpha = value[3];
 
-            foreach (Letter l in letters) {
-                if (l.GetComponent<UnityEngine.UI.Image>().color == defaultColor) {
-                    l.GetComponent<UnityEngine.UI.Image>().color = _color;
-                } else {
-                    break;
-                }
-            }
-            
-            if (currentColor == defaultColor) {
-                currentColor = _color;
-            }
+            textColorSet = true;
+
+            foreach (LetterData l in letters.Where(i => !i.commandColorSet))
+                l.image.color = new Color(_color.r, _color.g, _color.b, l.image.color.a);
+
+            if (!commandColorSet)
+                commandColor = _color;
             defaultColor = _color;
         }
     }
@@ -248,36 +379,96 @@ public class LuaTextManager : TextManager {
     // The color of the text on a 32 bits format. It uses an array of three or four floats between 0 and 255
     public float[] color32 {
         // We need first to convert the Color into a Color32, and then get the values.
-        get { return new float[] { ((Color32)_color).r, ((Color32)_color).g, ((Color32)_color).b }; }
+        get {
+            CheckExists();
+            return new float[] { ((Color32)_color).r, ((Color32)_color).g, ((Color32)_color).b };
+        }
         set {
             CheckExists();
-            color = new float[] { value[0] / 255, value[1] / 255, value[2] / 255, value.Length == 3 ? alpha : value[3] / 255 };
+            if (value == null)
+                throw new CYFException("text.color32 can not be set to a nil value.");
+            if (value.Length < 3 || value.Length > 4)
+                throw new CYFException("You need 3 or 4 numeric values when setting a text's color.");
+            color = value.Select(v => v / 255).ToArray();
         }
     }
 
     // The alpha of the text. It is clamped between 0 and 1
     public float alpha {
-        get { return _color.a; }
+        get {
+            CheckExists();
+            return _color.a;
+        }
         set {
             CheckExists();
-            color = new float[] { _color.r, _color.g, _color.b, Mathf.Clamp01(value) };
-            hasAlphaBeenSet = true;
-            hasColorBeenSet = false;
+            _color.a = Mathf.Clamp01(value);
+            textAlphaSet = true;
+
+            foreach (LetterData l in letters.Where(i => !i.commandAlphaSet))
+                l.image.color = new Color(l.image.color.r, l.image.color.g, l.image.color.b, _color.a);
+
+            if (!commandAlphaSet)
+                commandColor.a = _color.a;
+            _color.a = defaultColor.a = _color.a;
         }
     }
 
     // The alpha of the text in a 32 bits format. It is clamped between 0 and 255
     public float alpha32 {
-        get { return ((Color32)_color).a; }
+        get {
+            CheckExists();
+            return ((Color32)_color).a;
+        }
         set {
             CheckExists();
             alpha = value / 255;
         }
     }
 
-    public bool lineComplete {
+
+    public string linePrefix {
         get {
             CheckExists();
+            return _linePrefix;
+        }
+        set {
+            CheckExists();
+            _linePrefix = value;
+        }
+    }
+
+    private DynValue _OnTextDisplay = DynValue.Nil;
+    public DynValue OnTextDisplay {
+        get { return _OnTextDisplay; }
+        set {
+            if ((value.Type & (DataType.Nil | DataType.Function | DataType.ClrFunction)) == 0)
+                throw new CYFException("Text.OnTextDisplay: This variable has to be a function!");
+            if (value.Type == DataType.Function && value.Function.OwnerScript != caller.script)
+                throw new CYFException("Text.OnTextDisplay: You can only use a function created in the same script as the text object!");
+            _OnTextDisplay = value;
+        }
+    }
+
+    public DynValue GetLetters() {
+        CheckExists();
+        if (lateStartWaiting)
+            throw new CYFException("You cannot fetch a text object's letters on the first frame it was created, unless you use the [instant] command at the beginning of its line.");
+        Table table = new Table(null);
+        int key = 0;
+        foreach (LetterData d in letters) {
+            key++;
+            LuaSpriteController letter = LuaSpriteController.GetOrCreate(d.image.gameObject);
+            letter.tag = "letter";
+            letter.spritename = textQueue[currentLine].Text[d.index].ToString();
+            letter.img.GetComponent<Letter>().characterNumber = d.index;
+            table.Set(key, UserData.Create(letter, LuaSpriteController.data));
+        }
+
+        return DynValue.NewTable(table);
+    }
+
+    public bool lineComplete {
+        get {
             return LineComplete();
         }
     }
@@ -288,83 +479,78 @@ public class LuaTextManager : TextManager {
         }
     }
 
-    public void SetParent(LuaSpriteController parent) {
+    public void SetText(DynValue text, bool resetLateStart = true) {
         CheckExists();
-        try { container.transform.SetParent(parent.img.transform); } 
-        catch { throw new CYFException("You tried to set a removed sprite/nil sprite as this text object's parent."); }
-    }
+        hidden = false;
 
-    public void SetText(DynValue text) {
-        // disable late start if SetText is used on the same frame the text is created
-        base.LateStartWaiting = false;
-        
-        TextMessage[] msgs = null;
-        if (text == null || (text.Type != DataType.Table && text.Type != DataType.String))
+        // Disable late start if SetText is used on the same frame the text is created
+        if (resetLateStart)
+            lateStartWaiting = false;
+
+        if (text == null || text.Type != DataType.Table && text.Type != DataType.String)
             throw new CYFException("Text.SetText: the text argument must be a non-empty array of strings or a simple string.");
 
-        // Converts the text argument into a table if it's a simple string
-        text = text.Type == DataType.String ? DynValue.NewTable(null, new DynValue[1] { text }) : text;
+        // Convert the text argument into a table if it's a simple string
+        text = text.Type == DataType.String ? DynValue.NewTable(null, text) : text;
 
-        msgs = new TextMessage[text.Table.Length];
+        TextMessage[] msgs = new TextMessage[text.Table.Length];
         for (int i = 0; i < text.Table.Length; i++)
-            msgs[i] = new TextMessage(text.Table.Get(i + 1).String, false, false);
+            msgs[i] = new TextMessage(linePrefix + text.Table.Get(i + 1).String, false, false);
         if (bubble)
             containerBubble.SetActive(true);
-        try { SetTextQueue(msgs); } catch { }
+        try { SetTextQueue(msgs); }
+        catch { /* ignored */ }
+
         if (text.Table.Length != 0 && bubble)
             ResizeBubble();
     }
-    
-    public void LateStart() {
-        if (new StackFrame(1).GetMethod().Name != "lambda_method")
-            StartCoroutine(LateStartSetText());
+
+    protected override void SpawnText() {
+        base.SpawnText();
+        if ((OnTextDisplay.Type & (DataType.Function | DataType.ClrFunction)) != 0)
+            caller.Call(OnTextDisplay, "OnTextDisplay", UserData.Create(this));
+        else if (GlobalControls.isInFight && (EnemyEncounter.script.script.Globals.Get("OnTextDisplay").Type & (DataType.Function | DataType.ClrFunction)) != 0)
+            EnemyEncounter.script.Call("OnTextDisplay", UserData.Create(this));
     }
-    
-    IEnumerator LateStartSetText() {
-        yield return new WaitForEndOfFrame();
-        
-        if (!isactive)
+
+    [MoonSharpHidden] public void LateStart() { StartCoroutine(LateStartSetText()); }
+
+    private IEnumerator LateStartSetText(bool waitUntilEndOfFrame = true) {
+        if (waitUntilEndOfFrame)
+            yield return new WaitForEndOfFrame();
+
+        if (!isactive || !lateStartWaiting)
             yield break;
-        
-        /*
-        // manually do SetText, except without calling SetTextQueue
-        TextMessage[] msgs = null;
-        msgs = new TextMessage[text.Table.Length];
-        for (int i = 0; i < text.Table.Length; i++)
-            msgs[i] = new TextMessage(text.Table.Get(i + 1).String, false, false);
-        
-        base.textQueue = msgs;
-        */
-        
-        if (default_voice != null) {
-            letterSound.clip = default_voice;
-        } else
-            letterSound.clip = default_charset.Sound;
-        
-        // only allow inline text commands and letter sounds on the second frame
-        base.LateStartWaiting = false;
-        
-        base.currentLine = 0;
+
+        if (linePrefix != "")
+            foreach (TextMessage tm in textQueue)
+                tm.Text = linePrefix + tm.Text;
+
+        // Only allow inline text commands and letter sounds on the second frame
+        lateStartWaiting = false;
+
         ShowLine(0);
+        if (bubble)
+            UpdateBubble();
     }
-    
+
     public void AddText(DynValue text) {
         CheckExists();
 
         // Checks if the parameter given is valid
-        if (text == null || (text.Type != DataType.Table && text.Type != DataType.String))
+        if (text == null || text.Type != DataType.Table && text.Type != DataType.String)
             throw new CYFException("Text.AddText: the text argument must be a non-empty array of strings or a simple string.");
 
         // Converts the text argument into a table if it's a simple string
-        text = text.Type == DataType.String ? DynValue.NewTable(null, new DynValue[1] { text }) : text;
+        text = text.Type == DataType.String ? DynValue.NewTable(null, text) : text;
 
-        if (AllLinesComplete()) {
+        if (AllLinesComplete() || hidden) {
             SetText(text);
             return;
         }
         TextMessage[] msgs = new TextMessage[text.Table.Length];
         for (int i = 0; i < text.Table.Length; i++)
-            msgs[i] = new MonsterMessage(text.Table.Get(i + 1).String);
+            msgs[i] = new MonsterMessage(linePrefix + text.Table.Get(i + 1).String);
         AddToTextQueue(msgs);
     }
 
@@ -372,62 +558,46 @@ public class LuaTextManager : TextManager {
         if (voiceName == null)
             throw new CYFException("Text.SetVoice: The first argument (the voice name) is nil.\n\nSee the documentation for proper usage.");
         CheckExists();
-        if (voiceName == "none")
-            default_voice = null;
-        else
-            default_voice = AudioClipRegistry.GetVoice(voiceName);
+        defaultVoice = voiceName == "none" ? null : voiceName;
     }
 
-    public void SetFont(string fontName, bool firstTime = false) {
+    public void SetFont(string fontName) {
         if (fontName == null)
             throw new CYFException("Text.SetFont: The first argument (the font name) is nil.\n\nSee the documentation for proper usage.");
         CheckExists();
         UnderFont uf = SpriteFontRegistry.Get(fontName);
         if (uf == null)
             throw new CYFException("The font \"" + fontName + "\" doesn't exist.\nYou should check if you made a typo, or if the font really is in your mod.");
-        SetFont(uf, firstTime);
-        //if (forced)
-        //    default_charset = uf;
-        containerBubble.GetComponent<RectTransform>().localPosition = new Vector2(-12, 24);
-        // GetComponent<RectTransform>().localPosition = new Vector2(0, 16);
-        GetComponent<RectTransform>().localPosition = new Vector2(0, 0);
+        SetFont(uf);
+        if (bubble)
+            UpdateBubble();
     }
 
-    public void SetEffect(string effect, float intensity = -1) {
+    [MoonSharpHidden] public void UpdateBubble() {
+        containerBubble.GetComponent<RectTransform>().localPosition = new Vector2(-12, 24);
+        ResizeBubble();
+    }
+
+    public void SetEffect(string effect, float intensity = -1, float step = 0) {
         if (effect == null)
             throw new CYFException("Text.SetEffect: The first argument (the effect name) is nil.\n\nSee the documentation for proper usage.");
         CheckExists();
         switch (effect.ToLower()) {
-            case "none":
-                textEffect = null;
-                break;
-
-            case "twitch":
-                if (intensity != -1) textEffect = new TwitchEffect(this, intensity);
-                else                 textEffect = new TwitchEffect(this);
-                break;
-
-            case "shake":
-                if (intensity != -1) textEffect = new ShakeEffect(this, intensity);
-                else                 textEffect = new ShakeEffect(this);
-                break;
-
-            case "rotate":
-                if (intensity != -1) textEffect = new RotatingEffect(this, intensity);
-                else                 textEffect = new RotatingEffect(this);
-                break;
+            case "none":   textEffect = null;                                                               break;
+            case "twitch": textEffect = new TwitchEffect(this, intensity != -1 ? intensity : 2, (int)step); break;
+            case "shake":  textEffect = new ShakeEffect(this, intensity != -1 ? intensity : 1);             break;
+            case "rotate": textEffect = new RotatingEffect(this, intensity != -1 ? intensity : 1.5f, step); break;
 
             default:
                 throw new CYFException("The effect \"" + effect + "\" doesn't exist.\nYou can only choose between \"none\", \"twitch\", \"shake\" and \"rotate\".");
         }
     }
 
-    public bool IsTheLineFinished() {return lineComplete; }
-    public bool IsTheTextFinished() { return allLinesComplete; }
-
     public void ShowBubble(string side = null, DynValue position = null) {
+        CheckExists();
         bubble = true;
         containerBubble.SetActive(true);
+        UpdateBubble();
         SetSpeechThingPositionAndSide(side, position);
     }
 
@@ -437,37 +607,43 @@ public class LuaTextManager : TextManager {
     public void SetSpeechThingPositionAndSide(string side, DynValue position) {
         CheckExists();
         bubbleLastVar = position;
-        try { bubbleSide = side != null ? (BubbleSide)Enum.Parse(typeof(BubbleSide), side.ToUpper()) : BubbleSide.NONE; } 
+        try { bubbleSide = side != null ? (BubbleSide)Enum.Parse(typeof(BubbleSide), side.ToUpper()) : BubbleSide.NONE; }
         catch { throw new CYFException("The speech thing (tail) can only take \"RIGHT\", \"DOWN\" ,\"LEFT\" ,\"UP\" or \"NONE\" as a positional value, but you entered \"" + side.ToUpper() + "\"."); }
 
         if (bubbleSide != BubbleSide.NONE) {
             speechThing.gameObject.SetActive(true);
             speechThingShadow.gameObject.SetActive(true);
-            speechThing.anchorMin = speechThing.anchorMax = speechThingShadow.anchorMin = speechThingShadow.anchorMax = 
+            speechThing.anchorMin = speechThing.anchorMax = speechThingShadow.anchorMin = speechThingShadow.anchorMax =
                 new Vector2(bubbleSide == BubbleSide.LEFT ? 0 : bubbleSide == BubbleSide.RIGHT ? 1 : 0.5f,
                             bubbleSide == BubbleSide.DOWN ? 0 : bubbleSide == BubbleSide.UP ? 1 : 0.5f);
-            speechThing.rotation = speechThingShadow.rotation = Quaternion.Euler(0, 0, (int)bubbleSide);
+            speechThing.localRotation = speechThingShadow.localRotation = Quaternion.Euler(0, 0, (int)bubbleSide);
+            speechThing.localScale = speechThingShadow.localScale = new Vector2(speechThing.lossyScale.x < 0 ? -1 : 1, speechThing.lossyScale.y < 0 ? -1 : 1);
             bool isSide = bubbleSide == BubbleSide.LEFT || bubbleSide == BubbleSide.RIGHT;
             int size = isSide ? (int)containerBubble.GetComponent<RectTransform>().sizeDelta.y - 20 : (int)containerBubble.GetComponent<RectTransform>().sizeDelta.x - 20;
             if (position == null)
                 speechThing.anchoredPosition = speechThingShadow.anchoredPosition = new Vector3(0, 0);
             else {
-                if (position.Type == DataType.Number) {
-                    float number = (float)position.Number < 0 ? (float)position.Number : (size - (float)position.Number) - size / 2;
-                    speechThing.anchoredPosition = speechThingShadow.anchoredPosition = new Vector3(isSide ? 0 : Mathf.Clamp(number, -size / 2, size / 2),
-                                                                                                    isSide ? Mathf.Clamp(number, -size / 2, size / 2) : 0);
-                } else if (position.Type == DataType.String) {
-                    string str = position.String.Replace(" ", "");
-                    if (str.Contains("%")) {
-                        size -= 20;
-                        try {
-                            float percentage = Mathf.Clamp01(ParseUtil.GetFloat(str.Replace("%", "")) / 100);
-                            float x = isSide ? 0 : 10 + Mathf.Round(percentage * size) - size / 2;
-                            float y = isSide ? 10 + Mathf.Round(percentage * size) - size / 2 : 0;
-                            speechThing.anchoredPosition = speechThingShadow.anchoredPosition = new Vector3(x, y);
-                        } catch { throw new CYFException("If you use a '%' in your string, you should only have a number with it."); }
-                    } else
-                        throw new CYFException("You need to use a '%' in order to exploit the string.");
+                switch (position.Type) {
+                    case DataType.Number: {
+                        float number = (float)position.Number < 0 ? (float)position.Number : (float)position.Number - size / 2f;
+                        speechThing.anchoredPosition = speechThingShadow.anchoredPosition = new Vector3(isSide  ? 0 : Mathf.Clamp(number, -size / 2f, size / 2f),
+                                                                                                        !isSide ? 0 : Mathf.Clamp(number, -size / 2f, size / 2f));
+                        break;
+                    }
+                    case DataType.String: {
+                        string str = position.String.Replace(" ", "");
+                        if (str.Contains("%")) {
+                            try {
+                                float percentage = Mathf.Clamp01(ParseUtil.GetFloat(str.Replace("%", "")) / 100),
+                                      x          = isSide  ? 0 : Mathf.Round(percentage * size) - size / 2f,
+                                      y          = !isSide ? 0 : Mathf.Round(percentage * size) - size / 2f;
+                                speechThing.anchoredPosition = speechThingShadow.anchoredPosition = new Vector3(x, y);
+                            } catch { throw new CYFException("If you use a '%' in your string, you should only have a number with it."); }
+                        } else
+                            throw new CYFException("You need to use a '%' in order to exploit the string.");
+
+                        break;
+                    }
                 }
             }
         } else {
@@ -482,17 +658,59 @@ public class LuaTextManager : TextManager {
         containerBubble.SetActive(false);
     }
 
+    public override void SkipLine() {
+        if (noSkip1stFrame) return;
+        CheckExists();
+        if (GlobalControls.isInFight && EnemyEncounter.script.GetVar("playerskipdocommand").Boolean
+         || UnitaleUtil.IsOverworld && (EventManager.instance.script != null && EventManager.instance.script.GetVar("playerskipdocommand").Boolean
+         || GlobalControls.isInShop && GameObject.Find("Canvas").GetComponent<ShopScript>().script.GetVar("playerskipdocommand").Boolean))
+            DoSkipFromPlayer();
+        else
+            base.SkipLine();
+    }
+
     public void NextLine() {
         CheckExists();
-        if (AllLinesComplete()) {
-            if (bubble)
-                containerBubble.SetActive(false);
-            DestroyText();
+        if (AllLinesComplete() || currentLine + 1 == LineCount()) {
+            if (!deleteWhenFinished) {
+                HideTextObject();
+                if (bubble)
+                    containerBubble.SetActive(false);
+            } else
+                DestroyText();
         } else {
-            ShowLine(++currentLine); 
+            ShowLine(++currentLine);
             if (bubble)
                 ResizeBubble();
         }
+    }
+
+    private void PostScaleHandling() {
+        if (xscale == 0 || yscale == 0)
+            return;
+        foreach (LetterData l in letters) {
+            RectTransform r = l.image.GetComponent<RectTransform>();
+            float xSize = r.rect.width;
+            float ySize = r.rect.height;
+            float ratio = ySize / xSize;
+            float newXSize = xSize * xscale;
+            float newYSize = ySize * yscale;
+
+            List<float> scores = new List<float>();
+            for (int i = Mathf.FloorToInt(newXSize); i <= Mathf.CeilToInt(newXSize); i++)
+                for (int j = Mathf.FloorToInt(newYSize); j <= Mathf.CeilToInt(newYSize); j++) {
+                    if (i == 0 || j == 0) scores.Add(Mathf.Infinity);
+                    else                  scores.Add(Mathf.Abs(newXSize - i + newYSize - j + 10 * (j / i - ratio)));
+                }
+
+            int chosenScoreID = scores.IndexOf(scores.Min());
+            float chosenX = chosenScoreID < 2 ? Mathf.Floor(newXSize) : Mathf.Ceil(newXSize);
+            float chosenY = chosenScoreID % 2 == 0 ? Mathf.Floor(newYSize) : Mathf.Ceil(newYSize);
+            float xLocalScale = chosenX / newXSize;
+            float yLocalScale = chosenY / newYSize;
+            r.localScale = new Vector2(xLocalScale, yLocalScale);
+        }
+        MoveLetters();
     }
 
     // Shortcut to `SetAutoWaitTimeBetweenTexts`
@@ -503,22 +721,25 @@ public class LuaTextManager : TextManager {
         framesWait = time;
     }
 
-    public void MoveTo(int x, int y) {
-        CheckExists();
-        container.transform.localPosition = new Vector3(x, y, container.transform.localPosition.z);
+    public override void Move(float newX, float newY) {
+        MoveToAbs(container.transform.position.x + newX, container.transform.position.y + newY);
     }
 
-    public void MoveToAbs(int x, int y) {
-        CheckExists();
-        container.transform.position = new Vector3(x, y, container.transform.position.z);
+    public override void MoveTo(float newX, float newY) {
+        MoveToAbs(container.transform.parent.position.x + newX, container.transform.parent.position.y + newY);
     }
-    
-    /*
-    public void SetPivot(float x, float y) {
+
+    public override void MoveToAbs(float newX, float newY) {
         CheckExists();
-        container.GetComponent<RectTransform>().pivot = new Vector2(x, y);
+        container.transform.position = adjustTextDisplay ? new Vector3(Mathf.Round(newX), Mathf.Round(newY), transform.position.z)
+                                                         : new Vector3(newX, newY, transform.position.z);
     }
-    */
+
+    public void SetAnchor(float newX, float newY) {
+        CheckExists();
+        container.GetComponent<RectTransform>().anchorMin = new Vector2(newX, newY);
+        container.GetComponent<RectTransform>().anchorMax = new Vector2(newX, newY);
+    }
 
     public int GetTextWidth() {
         CheckExists();
@@ -528,5 +749,66 @@ public class LuaTextManager : TextManager {
     public int GetTextHeight() {
         CheckExists();
         return (int)UnitaleUtil.CalcTextHeight(this);
+    }
+
+    public void SetVar(string key, DynValue value) {
+        if (key == null)
+            throw new CYFException("text.SetVar: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
+        vars[key] = value;
+    }
+
+    public DynValue GetVar(string key) {
+        if (key == null)
+            throw new CYFException("text.GetVar: The first argument (the index) is nil.\n\nSee the documentation for proper usage.");
+        DynValue retval;
+        return vars.TryGetValue(key, out retval) ? retval : DynValue.NewNil();
+    }
+
+    public DynValue this[string key] {
+        get { return GetVar(key); }
+        set { SetVar(key, value); }
+    }
+
+    ////////////////////
+    // Children stuff //
+    ////////////////////
+
+    #pragma warning disable 108,114
+    public string name {
+        get { return container.name; }
+    }
+    #pragma warning restore 108,114
+
+    public int childIndex {
+        get { return container.transform.GetSiblingIndex() + 1; }
+        set { container.transform.SetSiblingIndex(value - 1); }
+    }
+    public int childCount {
+        get { return container.transform.childCount; }
+    }
+
+    public DynValue GetParent() {
+        return UnitaleUtil.GetObjectParent(container.transform);
+    }
+
+    public void SetParent(object parent) {
+        CheckExists();
+
+        Transform t = UnitaleUtil.GetTransform(parent);
+        if (t == null)
+            return;
+        UnitaleUtil.SetObjectParent(this, parent);
+
+        LuaSpriteController sParent = parent as LuaSpriteController;
+        ProjectileController pParent = parent as ProjectileController;
+        if (pParent != null)
+            sParent = pParent.sprite;
+        if (sParent == null)
+            return;
+        foreach (Transform child in container.transform) {
+            MaskImage childmask = child.gameObject.GetComponent<MaskImage>();
+            if (childmask != null)
+                childmask.inverted = sParent._masked == LuaSpriteController.MaskMode.INVERTEDSPRITE || sParent._masked == LuaSpriteController.MaskMode.INVERTEDSTENCIL;
+        }
     }
 }

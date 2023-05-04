@@ -1,4 +1,5 @@
-﻿using MoonSharp.Interpreter.Debugging;
+﻿using System;
+using MoonSharp.Interpreter.Debugging;
 
 namespace MoonSharp.Interpreter.Execution.VM
 {
@@ -28,7 +29,13 @@ namespace MoonSharp.Interpreter.Execution.VM
 
 			ex.DecorateMessage(m_Script, sref, ip);
 
-			ex.CallStack = Debugger_GetCallStack(sref);
+			try
+			{
+				ex.CallStack = Debugger_GetCallStack(sref);
+			}
+			catch (ArgumentOutOfRangeException)
+			{
+			}
 		}
 
 

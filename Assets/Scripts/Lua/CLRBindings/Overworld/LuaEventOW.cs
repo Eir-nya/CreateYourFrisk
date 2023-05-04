@@ -1,14 +1,23 @@
-﻿using System.Linq;
-using MoonSharp.Interpreter;
+﻿using MoonSharp.Interpreter;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class LuaEventOW {
     //private TextManager textmgr;
     public ScriptWrapper appliedScript;
-    
-    public delegate void LoadedAction(string name, object args);
+
+    public delegate void LoadedAction(string coroName, object args, string evName);
     [MoonSharpHidden] public static event LoadedAction StCoroutine;
+
+    /// <summary>
+    /// Checks if an event exists.
+    /// </summary>
+    /// <param name="name">Name of the event to check for.</param>
+    /// <returns>True if the event exists, false otherwise.</returns>
+    [CYFEventFunction] public bool Exists(string name) {
+        try { return GameObject.Find(name) != null; }
+        finally { appliedScript.Call("CYFEventNextCommand"); }
+    }
 
     /// <summary>
     /// Permits to teleport an event.
@@ -19,19 +28,20 @@ public class LuaEventOW {
     [CYFEventFunction] public void Teleport(string name, float dirX, float dirY) {
         for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
             GameObject go = null;
-            try { go = EventManager.instance.events[i]; } catch { }
-            if (name == go.name || name == "Player") {
-                if (name == "Player")
-                    go = GameObject.Find("Player");
-                Transform target = null;
-                if (go.transform.parent != null)
-                    if (go.transform.parent.name == "SpritePivot")
-                        target = go.transform.parent;
-                target = target ?? go.transform; //oof
-                target.position = new Vector3(dirX, dirY, target.position.z); //NEED PARENTAL REMOVE
-                appliedScript.Call("CYFEventNextCommand");
-                return;
-            }
+            try { go = EventManager.instance.events[i]; }
+            catch { /* ignored */ }
+
+            if (go == null || name != go.name && name != "Player") continue;
+            if (name == "Player")
+                go = GameObject.Find("Player");
+            Transform target = null;
+            if (go.transform.parent != null)
+                if (go.transform.parent.name == "SpritePivot")
+                    target = go.transform.parent;
+            target = target ?? go.transform;
+            target.position = new Vector3(dirX, dirY, target.position.z); //NEED PARENTAL REMOVE
+            appliedScript.Call("CYFEventNextCommand");
+            return;
         }
         throw new CYFException("Event.Teleport: The name you entered in the function doesn't exist. Did you forget to add the 'Event' tag?");
     }
@@ -44,31 +54,60 @@ public class LuaEventOW {
     /// <param name="name"></param>
     /// <param name="dirX"></param>
     /// <param name="dirY"></param>
-    [CYFEventFunction] public void MoveToPoint(string name, float dirX, float dirY, bool wallPass = false, bool waitEnd = true) { StCoroutine("IMoveEventToPoint", new object[] { name, dirX, dirY, wallPass, waitEnd }); }
+    /// <param name="wallPass"></param>
+    /// <param name="waitEnd"></param>
+    [CYFEventFunction] public void MoveToPoint(string name, float dirX, float dirY, bool wallPass = false, bool waitEnd = true) {
+        if (StCoroutine != null) StCoroutine("IMoveEventToPoint", new object[] { appliedScript, name, dirX, dirY, wallPass, waitEnd }, name);
+    }
 
     /// <summary>
-    /// Function that permits to put an animation on an event
+    /// Checks if an event is currently moving via Event.MoveToPoint.
+    /// </summary>
+    /// <param name="name">Name of the event to check for.</param>
+    /// <returns>True if the event is moving, false otherwise.</returns>
+    [CYFEventFunction] public bool isMoving(string name) {
+        for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
+            bool ismoving;
+            if (name != "Player") {
+                if (EventManager.instance.events[i].gameObject == null || EventManager.instance.events[i].gameObject.name != name)
+                    continue;
+                ismoving = EventManager.instance.events[i].GetComponent<EventOW>().isMovingSource != null;
+            } else
+                ismoving = PlayerOverworld.instance.isMoving;
+            appliedScript.Call("CYFEventNextCommand");
+            return ismoving;
+        }
+        throw new CYFException("Event.isMoving: The event \"" + name + "\" doesn't exist.");
+    }
+    [CYFEventFunction] public bool IsMoving(string name) { return isMoving(name); }
+
+    /// <summary>
+    /// Function that sets an event's animation prefix.
+    /// If the header itself matches an animation this event has, it will play the animation instead of using it as a prefix.
     /// </summary>
     /// <param name="name"></param>
     /// <param name="anim"></param>
     [CYFEventFunction] public void SetAnimHeader(string name, string anim) {
         for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
             GameObject go = null;
-            try { go = EventManager.instance.events[i]; } catch { }
-            if (name == go.name || name == "Player") {
-                if (name == "Player")
-                    go = GameObject.Find("Player");
-                try {
-                    if (go.name == "Player") CYFAnimator.specialPlayerHeader = anim;
-                    else                     go.GetComponent<CYFAnimator>().specialHeader = anim;
-                } catch {
-                    //If the GameObject's Animator component already exists
-                    if (go.GetComponent<CYFAnimator>()) throw new CYFException("Event.SetAnimHeader: The event given doesn't exist.");
-                    else                                throw new CYFException("Event.SetAnimHeader: The event given doesn't have a CYFAnimator component.");
-                }
-                appliedScript.Call("CYFEventNextCommand");
-                return;
-            }
+            try { go = EventManager.instance.events[i]; }
+            catch { /* ignored */ }
+
+            if (go == null)
+                throw new CYFException("Event.SetAnimHeader: The given event doesn't exist.");
+            if (name != go.name && name != "Player") continue;
+            if (name == "Player")
+                go = GameObject.Find("Player");
+
+            CYFAnimator animator = go.GetComponent<CYFAnimator>();
+            if (animator == null)
+                throw new CYFException("Event.SetAnimHeader: The given event doesn't have a CYFAnimator component.");
+
+            if (animator.AnimExists(animator.specialHeader))
+                animator.movementDirection = 2;
+            go.GetComponent<CYFAnimator>().specialHeader = anim;
+            appliedScript.Call("CYFEventNextCommand");
+            return;
         }
         UnitaleUtil.WriteInLogAndDebugger("Event.SetAnimHeader: The name you entered in the function isn't an event's name. Did you forget to add the 'Event' tag?");
         appliedScript.Call("CYFEventNextCommand");
@@ -77,7 +116,7 @@ public class LuaEventOW {
     [CYFEventFunction] public string GetAnimHeader(string name) {
         if (!GameObject.Find(name))                             throw new CYFException("Event.GetAnimHeader: The event given doesn't exist.");
         if (!GameObject.Find(name).GetComponent<CYFAnimator>()) throw new CYFException("Event.GetAnimHeader: The event given doesn't have a CYFAnimator component.");
-        try { return name == "Player" ? CYFAnimator.specialPlayerHeader : GameObject.Find(name).GetComponent<CYFAnimator>().specialHeader; } finally { appliedScript.Call("CYFEventNextCommand"); }
+        try { return GameObject.Find(name).GetComponent<CYFAnimator>().specialHeader; } finally { appliedScript.Call("CYFEventNextCommand"); }
     }
 
     [CYFEventFunction] public void SetDirection(string name, int dir) {
@@ -94,26 +133,6 @@ public class LuaEventOW {
         try { return GameObject.Find(name).GetComponent<CYFAnimator>().movementDirection; } finally { appliedScript.Call("CYFEventNextCommand"); }
     }
 
-    /*/// <summary>
-    /// Set a return point for the program. If you have to use while iterations, use this instead, with GetReturnPoint
-    /// </summary>
-    /// <param name="index"></param>
-    [CYFEventFunction]
-    public void SetReturnPoint(int index) {
-        LuaScriptBinder.Set(null, "ReturnPoint" + index, DynValue.NewNumber(textmgr.currentLine));
-        appliedScript.Call("CYFEventNextCommand");
-    }
-
-    /// <summary>
-    /// Forces the program to go back to the return point of the chosen index. If you have to use while iterations, use this instead, with SetReturnPoint
-    /// </summary>
-    /// <param name="index"></param>
-    [CYFEventFunction]
-    public void GetReturnPoint(int index) {
-        textmgr.currentLine = (int)LuaScriptBinder.Get(null, "ReturnPoint" + index).Number;
-        appliedScript.Call("CYFEventNextCommand");
-    }*/
-
     /// <summary>
     /// Rotates the sprite of an event.
     /// </summary>
@@ -121,29 +140,54 @@ public class LuaEventOW {
     /// <param name="rotateX"></param>
     /// <param name="rotateY"></param>
     /// <param name="rotateZ"></param>
-    /// <param name="axisAnim"></param>
+    /// <param name="anim"></param>
+    /// <param name="waitEnd"></param>
     [CYFEventFunction] public void Rotate(string name, float rotateX, float rotateY, float rotateZ, bool anim = true, bool waitEnd = true) {
         if (anim) {
-            StCoroutine("IRotateEvent", new object[] { name, rotateX, rotateY, rotateZ, true });
+            if (StCoroutine != null)
+                StCoroutine("IRotateEvent", new object[] { appliedScript, name, rotateX, rotateY, rotateZ, waitEnd }, name);
         } else {
             for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
                 GameObject go = null;
-                try { go = EventManager.instance.events[i]; } catch { }
-                if (name == go.name || name == "Player") {
-                    if (name == "Player")
-                        go = GameObject.Find("Player");
-                    go.GetComponent<RectTransform>().rotation = Quaternion.Euler(rotateX, rotateY, rotateZ);
-                    appliedScript.Call("CYFEventNextCommand");
-                    return;
-                }
+                try { go = EventManager.instance.events[i]; }
+                catch { /* ignored */ }
+
+                if (go == null || name != go.name && name != "Player") continue;
+                if (name == "Player")
+                    go = GameObject.Find("Player");
+                go.GetComponent<RectTransform>().rotation = Quaternion.Euler(rotateX, rotateY, rotateZ);
+                if (StCoroutine != null)
+                    StCoroutine("IRotateEvent", new object[] { appliedScript, name, rotateX, rotateY, rotateZ, waitEnd }, name);
+                return;
             }
             throw new CYFException("Event.Rotate: The name you entered in the function isn't an event's name. Did you forget to add the 'Event' tag?");
         }
     }
 
+    /// <summary>
+    /// Checks if an event is currently moving via Event.Rotate.
+    /// </summary>
+    /// <param name="name">Name of the event to check for.</param>
+    /// <returns>True if the event is rotating, false otherwise.</returns>
+    [CYFEventFunction] public bool isRotating(string name) {
+        for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
+            bool isrotating;
+            if (name != "Player") {
+                if (EventManager.instance.events[i].gameObject == null || EventManager.instance.events[i].gameObject.name != name)
+                    continue;
+                isrotating = EventManager.instance.events[i].GetComponent<EventOW>().isRotatingSource != null;
+            } else
+                isrotating = PlayerOverworld.instance.isRotatingSource != null;
+            appliedScript.Call("CYFEventNextCommand");
+            return isrotating;
+        }
+        throw new CYFException("Event.isRotating: The event \"" + name + "\" doesn't exist.");
+    }
+    [CYFEventFunction] public bool IsRotating(string name) { return isRotating(name); }
+
     [CYFEventFunction] public void Stop() {
         if (EventManager.instance.coroutines.ContainsKey(appliedScript)) StopCoroutine();
-        else                                                             EventManager.instance.EndEvent();                                                         
+        else                                                             EventManager.instance.EndEvent();
     }
 
     [CYFEventFunction] public void StopCoroutine(string eventName = "thisevent") {
@@ -159,14 +203,14 @@ public class LuaEventOW {
         }
 
         if (EventManager.instance.coroutines.ContainsKey(scr)) EventManager.instance.coroutines.Remove(scr);
-        else                                                   Debug.LogError("Event.StopCoroutine: You tried to remove the coroutine of an event which hadn't one.");
+        else                                                   Debug.LogError("Event.StopCoroutine: You tried to remove the coroutine of an event which did not have one.");
         appliedScript.Call("CYFEventNextCommand");
     }
 
     [CYFEventFunction] public void Remove(string eventName) {
         GameObject go = GameObject.Find(eventName);
         if (!go)
-            Debug.LogWarning("Event.Remove: The event " + eventName + " doesn't exist but you tried to remove it.");
+            UnitaleUtil.Warn("Event.Remove: The event " + eventName + " doesn't exist but you tried to remove it.", false);
         else {
             EventOW ev = go.GetComponent<EventOW>();
             if (ev != null)
@@ -179,15 +223,15 @@ public class LuaEventOW {
                             CurrPage = ev.actualPage,
                             CurrSpriteNameOrCYFAnim = ev.GetComponent<CYFAnimator>()
                                 ? ev.GetComponent<CYFAnimator>().specialHeader
-                                : EventManager.instance.sprCtrls[ev.name].img.GetComponent<SpriteRenderer>()
-                                    ? EventManager.instance.sprCtrls[ev.name].img.GetComponent<SpriteRenderer>().sprite.name
-                                    : EventManager.instance.sprCtrls[ev.name].img.GetComponent<Image>().sprite.name,
+                                : EventManager.instance.spriteControllers[ev.name].img.GetComponent<SpriteRenderer>()
+                                    ? EventManager.instance.spriteControllers[ev.name].img.GetComponent<SpriteRenderer>().sprite.name
+                                    : EventManager.instance.spriteControllers[ev.name].img.GetComponent<Image>().sprite.name,
                             NoCollision = ev.gameObject.layer == 0,
                             Anchor = UnitaleUtil.VectorToVect(ev.GetComponent<RectTransform>().anchorMax),
                             Pivot = UnitaleUtil.VectorToVect(ev.GetComponent<RectTransform>().pivot)
                         };
                         GlobalControls.EventData.Add(ev.name, ei);
-                    } catch { }
+                    } catch { /* ignored */ }
                 }
 
             if (EventManager.instance.eventScripts.ContainsKey(go)) {
@@ -195,14 +239,14 @@ public class LuaEventOW {
                     EventManager.instance.coroutines.Remove(EventManager.instance.eventScripts[go]);
                 EventManager.instance.eventScripts.Remove(go);
             }
-            EventManager.instance.sprCtrls.Remove(eventName);
+            EventManager.instance.spriteControllers.Remove(eventName);
             EventManager.instance.events.Remove(go);
             if (go.transform.parent != null)
                 if (go.transform.parent.name == "SpritePivot")
                     go = go.transform.parent.gameObject;
             Object.Destroy(go); //NEED PARENTAL REMOVE
         }
-        if (appliedScript != null && (EventManager.instance.ScriptLaunched || EventManager.instance.coroutines.ContainsKey(appliedScript)))
+        if (appliedScript != null && (EventManager.instance.ScriptRunning || EventManager.instance.coroutines.ContainsKey(appliedScript)))
             appliedScript.Call("CYFEventNextCommand");
     }
 
@@ -212,46 +256,42 @@ public class LuaEventOW {
     }
 
     [CYFEventFunction] public int GetPage(string ev) {
-        if (!GameObject.Find(ev))
-            throw new CYFException("Event.GetPage: The given event doesn't exist.");
+        if (!GameObject.Find(ev))                                            throw new CYFException("Event.GetPage: The given event doesn't exist.");
+        if (!EventManager.instance.events.Contains(GameObject.Find(ev))) throw new CYFException("Event.GetPage: The given event doesn't exist.");
 
-        if (!EventManager.instance.events.Contains(GameObject.Find(ev)))
-            throw new CYFException("Event.GetPage: The given event doesn't exist.");
         try { return GameObject.Find(ev).GetComponent<EventOW>().actualPage; } finally { appliedScript.Call("CYFEventNextCommand"); }
     }
 
     [MoonSharpHidden] public static void SetPage2(string eventName, int page) {
-        if (!GameObject.Find(eventName))
-            throw new CYFException("Event.SetPage: The given event doesn't exist.");
-
-        if (!EventManager.instance.events.Contains(GameObject.Find(eventName)))
-            throw new CYFException("Event.SetPage: The given event doesn't exist.");
+        if (!GameObject.Find(eventName))                                            throw new CYFException("Event.SetPage: The given event doesn't exist.");
+        if (!EventManager.instance.events.Contains(GameObject.Find(eventName))) throw new CYFException("Event.SetPage: The given event doesn't exist.");
 
         GameObject go = GameObject.Find(eventName);
-        if (!EventManager.instance.autoDone.ContainsKey(go))
+        if (EventManager.instance.autoDone.Contains(go))
             EventManager.instance.autoDone.Remove(go);
         go.GetComponent<EventOW>().actualPage = page;
-        if (EventManager.instance.ScriptLaunched || EventManager.instance.coroutines.ContainsKey(EventManager.instance.luaevow.appliedScript))
-            EventManager.instance.luaevow.appliedScript.Call("CYFEventNextCommand");
+        if (EventManager.instance.ScriptRunning || EventManager.instance.coroutines.ContainsKey(EventManager.instance.luaEventOw.appliedScript))
+            EventManager.instance.luaEventOw.appliedScript.Call("CYFEventNextCommand");
     }
 
     [CYFEventFunction] public DynValue GetSprite(string name) {
         try {
             if (name == "Player")
                 try { return UserData.Create(PlayerOverworld.instance.sprctrl); } finally { appliedScript.Call("CYFEventNextCommand"); }
-            foreach (string key in EventManager.instance.sprCtrls.Keys)
+            foreach (string key in EventManager.instance.spriteControllers.Keys)
                 if (key == name)
-                    try { return UserData.Create(EventManager.instance.sprCtrls[name]); } finally { appliedScript.Call("CYFEventNextCommand"); }
+                    try { return UserData.Create(EventManager.instance.spriteControllers[name]); } finally { appliedScript.Call("CYFEventNextCommand"); }
             EventManager.instance.ResetEvents(false);
-            foreach (string key in EventManager.instance.sprCtrls.Keys)
+            foreach (string key in EventManager.instance.spriteControllers.Keys)
                 if (key == name)
-                    try { return UserData.Create(EventManager.instance.sprCtrls[name]); } finally { appliedScript.Call("CYFEventNextCommand"); }
-        } catch { }
-        throw new CYFException("Event.GetSprite: The event " + name + " doesn't have a sprite.");
+                    try { return UserData.Create(EventManager.instance.spriteControllers[name]); } finally { appliedScript.Call("CYFEventNextCommand"); }
+        } catch { /* ignored */ }
+
+        throw new CYFException("Event.GetSprite: The event \"" + name + "\" doesn't have a sprite.");
     }
 
     [CYFEventFunction] public void CenterOnCamera(string name, int speed = 5, bool straightLine = false, bool waitEnd = true, string info = "Event.CenterOnCamera") {
-        EventManager.instance.luascrow.CenterEventOnCamera(name, speed, straightLine, waitEnd, info);
+        EventManager.instance.luaScreenOw.CenterEventOnCamera(name, speed, straightLine, waitEnd, info);
     }
 
     [CYFEventFunction] public string GetName() {
@@ -284,7 +324,7 @@ public class LuaEventOW {
     }
 
     [CYFEventFunction] public void IgnoreCollision(string name, bool ignore) {
-        for (int i = 0; (i < EventManager.instance.events.Count || name == "Player"); i++) {
+        for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
             if (name != "Player")
                 if (EventManager.instance.events[i].gameObject == null || EventManager.instance.events[i].gameObject.name != name)
                     continue;
@@ -298,7 +338,7 @@ public class LuaEventOW {
     }
 
     [CYFEventFunction] public void SetSpeed(string name, float speed) {
-        for (int i = 0; (i < EventManager.instance.events.Count || name == "Player"); i++) {
+        for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
             if (name != "Player") {
                 if (EventManager.instance.events[i].gameObject == null || EventManager.instance.events[i].gameObject.name != name)
                     continue;
@@ -309,5 +349,20 @@ public class LuaEventOW {
             return;
         }
         throw new CYFException("Event.SetSpeed: The event \"" + name + "\" doesn't exist.");
+    }
+
+    [CYFEventFunction] public float GetSpeed(string name) {
+        float speed;
+        for (int i = 0; i < EventManager.instance.events.Count || name == "Player"; i++) {
+            if (name != "Player") {
+                if (EventManager.instance.events[i].gameObject == null || EventManager.instance.events[i].gameObject.name != name)
+                    continue;
+                speed = EventManager.instance.events[i].GetComponent<EventOW>().moveSpeed;
+            } else
+                speed = PlayerOverworld.instance.speed;
+            appliedScript.Call("CYFEventNextCommand");
+            return speed;
+        }
+        throw new CYFException("Event.GetSpeed: The event \"" + name + "\" doesn't exist.");
     }
 }

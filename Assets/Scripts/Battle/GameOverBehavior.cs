@@ -1,7 +1,9 @@
-﻿using UnityEngine;
-using System.Collections.Generic;
-using UnityEngine.UI;
+﻿using System.Collections.Generic;
+using System.Linq;
+using MoonSharp.Interpreter;
+using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 /// <summary>
 /// The fairly hacky and somewhat unmaintainable Game Over behaviour class. Written in a hurry as it probably wasn't going to get replaced anytime soon.
@@ -10,7 +12,6 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public class GameOverBehavior : MonoBehaviour {
     private GameObject brokenHeartPrefab;
-    private GameObject heartShardPrefab;
     private GameObject utHeart;
     private Transform playerParent;
     public static GameObject battleCamera;
@@ -18,7 +19,8 @@ public class GameOverBehavior : MonoBehaviour {
     public static GameObject gameOverContainer;
     public static GameObject gameOverContainerOw;
     private GameObject canvasOW;
-    private string[] heartShardAnim = new string[] { "UI/Battle/heartshard_0", "UI/Battle/heartshard_1", "UI/Battle/heartshard_2", "UI/Battle/heartshard_3" };
+    private GameObject canvasTwo;
+    private readonly string[] heartShardAnim = { "UI/Battle/heartshard_0", "UI/Battle/heartshard_1", "UI/Battle/heartshard_2", "UI/Battle/heartshard_3" };
     private TextManager gameOverTxt;
     private TextManager reviveText;
     private Image gameOverImage;
@@ -27,21 +29,21 @@ public class GameOverBehavior : MonoBehaviour {
     private RectTransform[] heartShardInstances = new RectTransform[0];
     private Vector2[] heartShardRelocs;
     private LuaSpriteController[] heartShardCtrl;
-    
+
     private AudioSource gameOverMusic;
 
     private float breakHeartAfter = 1.0f;
-    private bool  breakHeartReviveAfter = false;
+    private bool  breakHeartReviveAfter;
     private float explodeHeartAfter = 2.5f;
     private float gameOverAfter = 4.5f;
     private float fluffybunsAfter = 6.5f;
-    private float internalTimer = 0.0f;
-    private float internalTimerRevive = 0.0f;
-    private float gameOverFadeTimer = 0.0f;
-    private bool started = false;
-    private bool done = false;
-    private bool exiting = false;
-    private bool once = false;
+    private float internalTimer;
+    private float internalTimerRevive;
+    private float gameOverFadeTimer;
+    private bool started;
+    private bool done;
+    private bool exiting;
+    private bool once;
 
     private Vector3 heartPos;
     private Color heartColor;
@@ -51,12 +53,11 @@ public class GameOverBehavior : MonoBehaviour {
     private string[] deathText;
 
     public int playerIndex = -1;
-    public int luaEncounterIndex = -1;
     public float playerZ = -1;
-    public bool autolinebreakstate = false;
-    public bool revived = false;
-    public bool hasRevived = false;
-    public bool reviveTextSet = false;
+    public bool autolinebreakstate;
+    public bool revived;
+    public bool hasRevived;
+    public bool reviveTextSet;
     public AudioSource musicBefore = null;
     public AudioClip music = null;
 
@@ -73,10 +74,10 @@ public class GameOverBehavior : MonoBehaviour {
         }
         if (reviveFade2 != null)
             Destroy(reviveFade2.gameObject);
-        
+
         if (!UnitaleUtil.IsOverworld) {
             UIController.instance.encounter.gameOverStance = false;
-            LuaEnemyEncounter.script.SetVar("autolinebreak", MoonSharp.Interpreter.DynValue.NewBoolean(autolinebreakstate));
+            EnemyEncounter.script.SetVar("autolinebreak", DynValue.NewBoolean(autolinebreakstate));
         }
         heartShardInstances = new RectTransform[0];
         breakHeartAfter = 1.0f;
@@ -95,7 +96,6 @@ public class GameOverBehavior : MonoBehaviour {
         once = false;
         //overworld = false;
         playerIndex = -1;
-        luaEncounterIndex = -1;
         playerZ = -1;
         autolinebreakstate = false;
         revived = false;
@@ -104,20 +104,21 @@ public class GameOverBehavior : MonoBehaviour {
 
     public void Revive() { revived = true; }
 
-    public void StartDeath(string[] deathText = null, string deathMusic = null) {
+    public void StartDeath(string[] newDeathText = null, string newDeathMusic = null) {
         PlayerOverworld.audioCurrTime = 0;
         if (!UnitaleUtil.IsOverworld) {
             UIController.instance.encounter.EndWave(true);
-            autolinebreakstate = LuaEnemyEncounter.script.GetVar("autolinebreak").Boolean;
-            LuaEnemyEncounter.script.SetVar("autolinebreak", MoonSharp.Interpreter.DynValue.NewBoolean(true));
+            autolinebreakstate = EnemyEncounter.script.GetVar("autolinebreak").Boolean;
+            EnemyEncounter.script.SetVar("autolinebreak", DynValue.NewBoolean(true));
+            transform.position = new Vector3(transform.position.x - Misc.cameraX, transform.position.y - Misc.cameraY, transform.position.z);
         } else
             autolinebreakstate = true;
 
-        this.deathText = deathText;
-        this.deathMusic = deathMusic;
-        
-        // reset the battle camera's position
-        Misc.ResetCamera();
+        deathText = newDeathText;
+        deathMusic = newDeathMusic;
+
+        //Reset the camera's position
+        Misc.MoveCameraTo(0, 0);
 
         playerZ = 130;
         if (UnitaleUtil.IsOverworld) {
@@ -131,7 +132,7 @@ public class GameOverBehavior : MonoBehaviour {
         }
 
         if (UnitaleUtil.IsOverworld) {
-            
+
             /* transform.parent.position = new Vector3(transform.parent.position.x - GameObject.Find("Main Camera OW").transform.position.x - 320,
                                                     transform.parent.position.y - GameObject.Find("Main Camera OW").transform.position.y - 240, transform.parent.position.z); */
             battleCamera = GameObject.Find("Main Camera OW");
@@ -143,11 +144,11 @@ public class GameOverBehavior : MonoBehaviour {
             GetComponent<Image>().enabled = true; // abort the blink animation if it was playing
             battleCamera = GameObject.Find("Main Camera");
             battleCamera.SetActive(false);
-            
+
             battleContainer = GameObject.Find("Canvas");
             battleContainer.GetComponent<Canvas>().enabled = false;
         }
-        
+
         // remove all bullets if in retrocompatibility mode
         if (GlobalControls.retroMode) {
             foreach (LuaProjectile p in FindObjectsOfType<LuaProjectile>())
@@ -160,10 +161,8 @@ public class GameOverBehavior : MonoBehaviour {
                 go.SetParent(battleContainer.transform);
         battleContainer.SetActive(false);*/
 
-        if (UnitaleUtil.IsOverworld)
-            gameOverContainerOw.SetActive(true);
-        else
-            gameOverContainer.SetActive(true);
+        if (UnitaleUtil.IsOverworld) gameOverContainerOw.SetActive(true);
+        else                         gameOverContainer.SetActive(true);
 
         Camera.main.GetComponent<AudioSource>().clip = AudioClipRegistry.GetMusic("mus_gameover");
         GameObject.Find("GameOver").GetComponent<Image>().sprite = SpriteRegistry.Get("UI/spr_gameoverbg_0");
@@ -188,15 +187,12 @@ public class GameOverBehavior : MonoBehaviour {
             UIStats.instance.setHP(PlayerCharacter.instance.MaxHP);
         }
         brokenHeartPrefab = Resources.Load<GameObject>("Prefabs/heart_broken");
-        if (SpriteRegistry.GENERIC_SPRITE_PREFAB == null)
-            SpriteRegistry.GENERIC_SPRITE_PREFAB = Resources.Load<Image>("Prefabs/generic_sprite");
-        heartShardPrefab = SpriteRegistry.GENERIC_SPRITE_PREFAB.gameObject;
         reviveText = GameObject.Find("ReviveText").GetComponent<TextManager>();
-        reviveText.SetCaller(LuaEnemyEncounter.script);
+        reviveText.SetCaller(EnemyEncounter.script);
         reviveFade = GameObject.Find("ReviveFade").GetComponent<Image>();
         reviveFade.transform.SetAsLastSibling();
         gameOverTxt = GameObject.Find("TextParent").GetComponent<TextManager>();
-        gameOverTxt.SetCaller(LuaEnemyEncounter.script);
+        gameOverTxt.SetCaller(EnemyEncounter.script);
         gameOverImage = GameObject.Find("GameOver").GetComponent<Image>();
         if (UnitaleUtil.IsOverworld) {
             /*
@@ -213,23 +209,12 @@ public class GameOverBehavior : MonoBehaviour {
         started = true;
     }
 
-    void Awake() {
-        //GameObject.Destroy(GameObject.Find("Canvas OW"));
-        //GameObject.Destroy(GameObject.Find("Player"));
-        //SceneManager.LoadScene("GameOver");
-        //if (GameObject.Find("Canvas OW") != null)
-        //    overworld = true;
-        //if (overworld)
-        //    GameObject.Destroy(GameObject.Find("Main Camera OW"));
-    }
-
-	// Update is called once per frame
-	void Update () {
+    // Update is called once per frame
+    private void Update () {
         if (hasRevived && reviveFade2) {
-            if (reviveFade2.transform.localPosition != new Vector3(0, 0, 0))
-                reviveFade2.transform.localPosition = new Vector3(0, 0, 0);
+            reviveFade2.transform.localPosition = new Vector3(0, 0, 0);
             if (reviveFade2.color.a > 0.0f)  reviveFade2.color = new Color(1, 1, 1, reviveFade2.color.a - Time.deltaTime / 2);
-            else                             GameObject.Destroy(reviveFade2.gameObject);
+            else                             Destroy(reviveFade2.gameObject);
         }
         if (!started)
             return;
@@ -241,6 +226,8 @@ public class GameOverBehavior : MonoBehaviour {
                 utHeart.GetComponent<Image>().color = heartColor;
                 canvasOW = GameObject.Find("Canvas OW");
                 canvasOW.SetActive(false);
+                canvasTwo = GameObject.Find("Canvas Two");
+                canvasTwo.SetActive(false);
             } else if (!once) {
                 once = true;
                 gameObject.GetComponent<RectTransform>().sizeDelta = new Vector2(16, 16);
@@ -250,10 +237,7 @@ public class GameOverBehavior : MonoBehaviour {
             if (internalTimer > breakHeartAfter) {
                 AudioSource.PlayClipAtPoint(AudioClipRegistry.GetSound("heartbeatbreaker"), Camera.main.transform.position, 0.75f);
                 brokenHeartPrefab = Instantiate(brokenHeartPrefab);
-                if (UnitaleUtil.IsOverworld)
-                    brokenHeartPrefab.transform.SetParent(GameObject.Find("Canvas GameOver").transform);
-                else
-                    brokenHeartPrefab.transform.SetParent(gameObject.transform);
+                brokenHeartPrefab.transform.SetParent(UnitaleUtil.IsOverworld ? GameObject.Find("Canvas GameOver").transform : gameObject.transform);
                 brokenHeartPrefab.GetComponent<RectTransform>().position = heartPos;
                 brokenHeartPrefab.GetComponent<Image>().color = heartColor;
                 brokenHeartPrefab.GetComponent<Image>().enabled = true;
@@ -262,7 +246,7 @@ public class GameOverBehavior : MonoBehaviour {
                 else {
                     Color color = gameObject.GetComponent<Image>().color;
                     gameObject.GetComponent<Image>().color = new Color(color.r, color.g, color.b, 0);
-                    if (LuaEnemyEncounter.script.GetVar("revive").Boolean)
+                    if (EnemyEncounter.script.GetVar("revive").Boolean)
                         Revive();
                 }
                 breakHeartAfter = 999.0f;
@@ -275,15 +259,12 @@ public class GameOverBehavior : MonoBehaviour {
                 heartShardRelocs = new Vector2[6];
                 heartShardCtrl = new LuaSpriteController[6];
                 for (int i = 0; i < heartShardInstances.Length; i++) {
-                    heartShardInstances[i] = Instantiate(heartShardPrefab).GetComponent<RectTransform>();
-                    heartShardCtrl[i] = new LuaSpriteController(heartShardInstances[i].GetComponent<Image>());
-                    if (UnitaleUtil.IsOverworld)
-                        heartShardInstances[i].transform.SetParent(GameObject.Find("Canvas GameOver").transform);
-                    else
-                        heartShardInstances[i].transform.SetParent(this.gameObject.transform);
+                    heartShardInstances[i] = Instantiate(SpriteRegistry.GENERIC_SPRITE_PREFAB.gameObject).GetComponent<RectTransform>();
+                    heartShardCtrl[i] = LuaSpriteController.GetOrCreate(heartShardInstances[i].gameObject);
+                    heartShardInstances[i].transform.SetParent(UnitaleUtil.IsOverworld ? GameObject.Find("Canvas GameOver").transform : gameObject.transform);
                     heartShardInstances[i].GetComponent<RectTransform>().position = heartPos;
                     heartShardInstances[i].GetComponent<Image>().color = heartColor;
-                    heartShardRelocs[i] = UnityEngine.Random.insideUnitCircle * 100.0f;
+                    heartShardRelocs[i] = Random.insideUnitCircle * 100.0f;
                     heartShardCtrl[i].Set(heartShardAnim[0]);
                     heartShardCtrl[i].SetAnimation(heartShardAnim, 1 / 5f);
                 }
@@ -293,44 +274,39 @@ public class GameOverBehavior : MonoBehaviour {
             if (internalTimer > gameOverAfter) {
                 AudioClip originMusic = gameOverMusic.clip;
                 if (deathMusic != null) {
-                    gameOverMusic.clip = AudioClipRegistry.GetMusic(deathMusic);
-                    if (gameOverMusic.clip == null) {
-                        UnitaleUtil.WriteInLogAndDebugger("[WARN]The specified death music doesn't exist. (" + deathMusic + ")");
-
+                    try { gameOverMusic.clip = AudioClipRegistry.GetMusic(deathMusic); }
+                    catch { UnitaleUtil.DisplayLuaError("game over screen", "The specified death music doesn't exist. (\"" + deathMusic + "\")"); }
+                    if (gameOverMusic.clip == null)
                         gameOverMusic.clip = originMusic;
-                    }
                 }
                 gameOverMusic.Play();
                 gameOverAfter = 999.0f;
             }
 
             if (internalTimer > fluffybunsAfter) {
-                gameOverTxt.SetHorizontalSpacing(7);
                 if (deathText != null) {
-                    List<TextMessage> text = new List<TextMessage>();
-                    foreach (string str in deathText)
-                        text.Add(new TextMessage(str, false, false));
+                    List<TextMessage> text = deathText.Select(str => new TextMessage(str, false, false)).ToList();
                     TextMessage[] text2 = new TextMessage[text.Count + 1];
                     for (int i = 0; i < text.Count; i++)
                         text2[i] = text[i];
                     text2[text.Count] = new TextMessage("", false, false);
                     if (Random.Range(0, 400) == 44)
-                        gameOverTxt.SetTextQueue(new TextMessage[]{
+                        gameOverTxt.SetTextQueue(new[]{
                             new TextMessage("[color:ffffff][voice:v_fluffybuns][waitall:2]4", false, false),
                             new TextMessage("[color:ffffff][voice:v_fluffybuns][waitall:2]" + PlayerCharacter.instance.Name + "!\n[w:15]Stay determined...", false, false),
                             new TextMessage("", false, false) });
                     else
                         gameOverTxt.SetTextQueue(text2);
                 } else {
-                    //This "4" made us laugh so hard that I kept it :P
+                    // This "4" made us laugh so hard that I kept it :P
                     int fourChance = Random.Range(0, 80);
 
-                    string[] possibleDeathTexts = new string[] { "You cannot give up\njust yet...", "It cannot end\nnow...", "Our fate rests upon\nyou...",
+                    string[] possibleDeathTexts = { "You cannot give up\njust yet...", "It cannot end\nnow...", "Our fate rests upon\nyou...",
                                                                  "Don't lose hope...", "You're going to\nbe alright!"};
                     if (fourChance == 44)
                         possibleDeathTexts[4] = "4";
 
-                    gameOverTxt.SetTextQueue(new TextMessage[]{
+                    gameOverTxt.SetTextQueue(new[]{
                         new TextMessage("[color:ffffff][voice:v_fluffybuns][waitall:2]" + possibleDeathTexts[Math.RandomRange(0, possibleDeathTexts.Length)], false, false),
                         new TextMessage("[color:ffffff][voice:v_fluffybuns][waitall:2]" + PlayerCharacter.instance.Name + "!\n[w:15]Stay determined...", false, false),
                         new TextMessage("", false, false) });                        }
@@ -347,7 +323,7 @@ public class GameOverBehavior : MonoBehaviour {
                         done = true;
                     }
                 }
-                internalTimer += Time.deltaTime; // this is actually dangerous because done can be true before everything's done if timers are modified
+                internalTimer += Time.deltaTime; // This is actually dangerous because done can be true before everything's done if timers are modified
             } else if (!exiting &&!gameOverTxt.AllLinesComplete())
                 // Note: [noskip] only affects the UI controller's ability to skip, so we have to redo that here.
                 if (InputUtil.Pressed(GlobalControls.input.Confirm) && gameOverTxt.LineComplete())
@@ -361,7 +337,6 @@ public class GameOverBehavior : MonoBehaviour {
                 exiting = true;
             } else if (internalTimerRevive >= 5.0f && !reviveTextSet && breakHeartReviveAfter) {
                 if (deathText != null) {
-                    reviveText.SetHorizontalSpacing(7);
                     List<TextMessage> text = new List<TextMessage>();
                     foreach (string str in deathText)
                         text.Add(new TextMessage(str, false, false));
@@ -373,7 +348,7 @@ public class GameOverBehavior : MonoBehaviour {
                 }
                 reviveTextSet = true;
             } else if (internalTimerRevive > 2.5f && internalTimerRevive < 4.0f) {
-                brokenHeartPrefab.transform.localPosition = new Vector2(UnityEngine.Random.Range(-3, 2), UnityEngine.Random.Range(-3, 2));
+                brokenHeartPrefab.transform.localPosition = new Vector2(Random.Range(-3, 2), Random.Range(-3, 2));
             } else if (!breakHeartReviveAfter && internalTimerRevive > 2.5f) {
                 breakHeartReviveAfter = true;
                 AudioSource.PlayClipAtPoint(AudioClipRegistry.GetSound("heartbeatbreaker"), Camera.main.transform.position, 0.75f);
@@ -383,7 +358,7 @@ public class GameOverBehavior : MonoBehaviour {
                     Color color = gameObject.GetComponent<Image>().color;
                     gameObject.GetComponent<Image>().color = new Color(color.r, color.g, color.b, 1);
                 }
-                GameObject.Destroy(brokenHeartPrefab);
+                Destroy(brokenHeartPrefab);
             }
 
             if (!reviveTextSet) internalTimerRevive += Time.deltaTime;
@@ -396,7 +371,7 @@ public class GameOverBehavior : MonoBehaviour {
                 if (gameOverMusic.volume - Time.deltaTime > 0.0f) gameOverMusic.volume -= Time.deltaTime;
                 else gameOverMusic.volume = 0.0f;
                 if (gameOverFadeTimer < -1.0f) {
-                    reviveFade2 = GameObject.Instantiate(reviveFade.gameObject).GetComponent<Image>();
+                    reviveFade2 = Instantiate(reviveFade.gameObject).GetComponent<Image>();
                     reviveFade2.transform.SetParent(playerParent);
                     reviveFade2.transform.SetAsLastSibling();
                     reviveFade2.transform.localPosition = new Vector3(0, 0, 0);
@@ -416,31 +391,30 @@ public class GameOverBehavior : MonoBehaviour {
             heartShardRelocs[i].y -= 100f * Time.deltaTime;
         }
 
-        if (gameOverTxt.textQueue != null)
-            if (!exiting && gameOverTxt.AllLinesComplete() && gameOverTxt.LineCount() != 0) {
-                exiting = true;
-                gameOverFadeTimer = 1.0f;
-            } else if (exiting && gameOverFadeTimer > 0.0f) {
-                gameOverImage.color = new Color(1, 1, 1, gameOverFadeTimer);
-                if (gameOverFadeTimer > 0.0f)  {
-                    gameOverFadeTimer -= Time.deltaTime / 2;
-                    if (gameOverFadeTimer <= 0.0f)
-                        gameOverFadeTimer = 0.0f;
-                }
+        if (gameOverTxt.textQueue == null) return;
+        if (!exiting && gameOverTxt.AllLinesComplete() && gameOverTxt.LineCount() != 0) {
+            exiting = true;
+            gameOverFadeTimer = 1.0f;
+        } else if (exiting && gameOverFadeTimer > 0.0f) {
+            gameOverImage.color = new Color(1, 1, 1, gameOverFadeTimer);
+            if (!(gameOverFadeTimer > 0.0f)) return;
+            gameOverFadeTimer -= Time.deltaTime / 2;
+            if (gameOverFadeTimer <= 0.0f)
+                gameOverFadeTimer = 0.0f;
+        }
+        else if (exiting) {
+            // repurposing the timer as a reset delay
+            gameOverFadeTimer -= Time.deltaTime;
+            if (gameOverMusic.volume - Time.deltaTime > 0.0f)
+                gameOverMusic.volume -= Time.deltaTime;
+            else
+                gameOverMusic.volume = 0.0f;
+            if (gameOverFadeTimer < -1.0f) {
+                //StaticInits.Reset();
+                EndGameOver();
             }
-            else if (exiting) {
-                // repurposing the timer as a reset delay
-                gameOverFadeTimer -= Time.deltaTime;
-                if (gameOverMusic.volume - Time.deltaTime > 0.0f)
-                    gameOverMusic.volume -= Time.deltaTime;
-                else
-                    gameOverMusic.volume = 0.0f;
-                if (gameOverFadeTimer < -1.0f) {
-                    //StaticInits.Reset();
-                    EndGameOver();
-                }
-            }
-	}
+        }
+    }
 
     public void EndGameOver() {
         if (!GlobalControls.modDev)
@@ -448,9 +422,11 @@ public class GameOverBehavior : MonoBehaviour {
         if (!UnitaleUtil.IsOverworld) {
             UIController.EndBattle(true);
             Destroy(gameObject);
-            if (GlobalControls.modDev)
+            if (GlobalControls.modDev) {
+                // Discord Rich Presence
+                DiscordControls.StartModSelect();
                 SceneManager.LoadScene("ModSelect");
-            else {
+            } else {
                 foreach (string str in NewMusicManager.audioname.Keys)
                     if (str == "StaticKeptAudio") {
                         NewMusicManager.Stop(str);
@@ -460,26 +436,25 @@ public class GameOverBehavior : MonoBehaviour {
             }
         } else
             EndGameOverRevive();
-        if (!GlobalControls.modDev) {
-            TPHandler tp = Instantiate(Resources.Load<TPHandler>("Prefabs/TP On-the-fly"));
-            tp.sceneName = LuaScriptBinder.Get(null, "PlayerMap").String;
-            
-            if (UnitaleUtil.MapCorrespondanceList.ContainsValue(tp.sceneName)) {
-                foreach (KeyValuePair<string, string> entry in UnitaleUtil.MapCorrespondanceList) {
-                    if (entry.Value == tp.sceneName) {
-                        tp.sceneName = entry.Key;
-                        break;
-                    }
-                }
+
+        if (GlobalControls.modDev) return;
+        TPHandler tp = Instantiate(Resources.Load<TPHandler>("Prefabs/TP On-the-fly"));
+        tp.sceneName = LuaScriptBinder.Get(null, "PlayerMap").String;
+
+        if (UnitaleUtil.MapCorrespondanceList.ContainsValue(tp.sceneName)) {
+            foreach (KeyValuePair<string, string> entry in UnitaleUtil.MapCorrespondanceList) {
+                if (entry.Value != tp.sceneName) continue;
+                tp.sceneName = entry.Key;
+                break;
             }
-            
-            tp.position = new Vector3((float)LuaScriptBinder.Get(null, "PlayerPosX").Number, (float)LuaScriptBinder.Get(null, "PlayerPosY").Number, LuaScriptBinder.Get(null, "PlayerPosZ") == null ? 0 : (float)LuaScriptBinder.Get(null, "PlayerPosZ").Number);
-            tp.direction = 2;
-            tp.noFadeIn = true;
-            tp.noFadeOut = false;
-            GameObject.DontDestroyOnLoad(tp);
-            tp.LaunchTPInternal();
         }
+
+        tp.position  = new Vector3((float)LuaScriptBinder.Get(null, "PlayerPosX").Number, (float)LuaScriptBinder.Get(null, "PlayerPosY").Number, LuaScriptBinder.Get(null, "PlayerPosZ") == null ? 0 : (float)LuaScriptBinder.Get(null, "PlayerPosZ").Number);
+        tp.direction = 2;
+        tp.noFadeIn  = true;
+        tp.noFadeOut = false;
+        DontDestroyOnLoad(tp);
+        tp.LaunchTPInternal();
     }
 
     public void EndGameOverRevive() {
@@ -492,21 +467,22 @@ public class GameOverBehavior : MonoBehaviour {
             transform.parent.SetSiblingIndex(playerIndex);
         }
         battleCamera.SetActive(true);
-        
+
         if (!UnitaleUtil.IsOverworld)
             battleContainer.GetComponent<Canvas>().enabled = true;
-        
+
         if (UnitaleUtil.IsOverworld) {
             canvasOW.SetActive(true);
+            canvasTwo.SetActive(true);
             PlayerOverworld.instance.enabled = true;
             PlayerOverworld.instance.RestartMusic();
             GetComponent<SpriteRenderer>().enabled = true;
         }
         ResetGameOver();
-        
+
         if (!UnitaleUtil.IsOverworld) {
             ArenaManager.instance.ResizeImmediate(ArenaManager.UIWidth, ArenaManager.UIHeight);
-            UIController.instance.SwitchState(UIController.UIState.ACTIONSELECT);
+            UIController.instance.SwitchState("ACTIONSELECT");
             gameOverContainer.SetActive(false);
         } else
             gameOverContainerOw.SetActive(false);
