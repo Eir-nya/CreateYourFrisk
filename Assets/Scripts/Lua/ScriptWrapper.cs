@@ -3,6 +3,7 @@ using MoonSharp.Interpreter;
 using System;
 using System.Collections.Generic;
 
+[CYFLuaClass("Script")]
 public class ScriptWrapper {
     [MoonSharpHidden] public static List<ScriptWrapper> instances = new List<ScriptWrapper>();
     [MoonSharpHidden] public Script script;

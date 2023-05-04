@@ -6,6 +6,7 @@ using UnityEngine.UI;
 /// <summary>
 /// Lua binding to set and retrieve information for bullets in the game.
 /// </summary>
+[CYFLuaClass("Projectile")]
 public class ProjectileController {
     private Projectile p;
     private readonly LuaSpriteController spr;

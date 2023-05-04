@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using MoonSharp.Interpreter;
 using UnityEngine.UI;
 
+[CYFLuaClass("Sprite")]
 public class LuaSpriteController {
     [MoonSharpHidden] public CYFSprite spr;
     [MoonSharpHidden] public bool removed;

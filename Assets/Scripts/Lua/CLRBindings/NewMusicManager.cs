@@ -3,6 +3,7 @@ using MoonSharp.Interpreter;
 using System.Collections;
 using System.Collections.Generic;
 
+[CYFLuaClass("NewAudio")]
 public class NewMusicManager {
     [MoonSharpHidden] public static Hashtable audiolist = new Hashtable();
     [MoonSharpHidden] public static Dictionary<string, string> audioname = new Dictionary<string, string>();

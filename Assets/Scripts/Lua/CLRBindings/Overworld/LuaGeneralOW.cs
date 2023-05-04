@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using MoonSharp.Interpreter;
 
+[CYFLuaClass("General"), CYFOverworldClass]
 public class LuaGeneralOW {
     private readonly TextManager textmgr;
     public ScriptWrapper appliedScript;

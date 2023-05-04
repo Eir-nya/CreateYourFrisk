@@ -2,6 +2,7 @@
 using UnityEngine.UI;
 using MoonSharp.Interpreter;
 
+[CYFLuaClass("Screen"), CYFOverworldClass]
 public class LuaScreenOW {
     public ScriptWrapper appliedScript;
 

@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
+[CYFLuaClass("UI")]
 public class LuaPlayerUI {
     private readonly UIStats ui = UIStats.instance;
     private LuaSpriteController bg;

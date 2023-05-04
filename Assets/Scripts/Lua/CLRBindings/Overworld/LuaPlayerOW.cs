@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using MoonSharp.Interpreter;
 
+[CYFLuaClass("Player"), CYFOverworldClass]
 public class LuaPlayerOW {
     public ScriptWrapper appliedScript;
 

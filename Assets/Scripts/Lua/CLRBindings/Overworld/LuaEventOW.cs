@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+[CYFLuaClass("Event"), CYFOverworldClass]
 public class LuaEventOW {
     //private TextManager textmgr;
     public ScriptWrapper appliedScript;

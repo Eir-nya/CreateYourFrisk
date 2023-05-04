@@ -5,6 +5,7 @@ using System.Collections;
 /// <summary>
 /// Lua binding to manipulate in-game music and play sounds.
 /// </summary>
+[CYFLuaClass("Audio")]
 public class MusicManager {
     [MoonSharpHidden] public static MusicManager instance;
     private static AudioSource _src;

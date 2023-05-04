@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 
+[CYFLuaClass("File")]
 public class LuaFile {
     private string[] content;
 

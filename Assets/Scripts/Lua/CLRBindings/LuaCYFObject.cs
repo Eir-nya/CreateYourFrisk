@@ -1,6 +1,7 @@
 ﻿using MoonSharp.Interpreter;
 using UnityEngine;
 
+[CYFLuaClass("Object")]
 public class LuaCYFObject {
     public Transform transform;
 

@@ -1,6 +1,7 @@
 ﻿/// <summary>
 /// Lua binding to set and retrieve information for the game's arena.
 /// </summary>
+[CYFLuaClass("Arena")]
 public class LuaArenaStatus {
     public float width         { get { return ArenaManager.instance.desiredWidth;                            } }
     public float height        { get { return ArenaManager.instance.desiredHeight;                           } }

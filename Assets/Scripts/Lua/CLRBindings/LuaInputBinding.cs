@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System;
 
+[CYFLuaClass("Input")]
 public class LuaInputBinding {
     private readonly UndertaleInput input;
     public LuaInputBinding(UndertaleInput baseInput) { input = baseInput; }

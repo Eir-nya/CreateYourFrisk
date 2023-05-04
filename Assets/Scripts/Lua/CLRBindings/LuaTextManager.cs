@@ -5,6 +5,12 @@ using System.Collections.Generic;
 using System.Linq;
 using MoonSharp.Interpreter;
 
+internal class LuaTextManagerDescriptor : MoonSharp.Interpreter.Interop.StandardUserDataDescriptor {
+    public LuaTextManagerDescriptor() : base(typeof(LuaTextManager), InteropAccessMode.Default) { }
+    public override string AsString(object obj) { return "LuaTextManager"; }
+}
+
+[CYFLuaClass("Text", typeof(LuaTextManagerDescriptor))]
 public class LuaTextManager : TextManager {
     private GameObject container;
     private bool removed;

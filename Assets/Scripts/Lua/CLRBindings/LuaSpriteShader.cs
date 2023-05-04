@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using MoonSharp.Interpreter;
 using System.Collections.Generic;
 
+[CYFLuaClass("Shader")]
 public class LuaSpriteShader {
     private readonly string mode;
     private readonly GameObject gameObject;
@@ -215,6 +216,7 @@ public class LuaSpriteShader {
 
 
 
+    [CYFLuaClass("Matrix")]
     public class MatrixFourByFour {
         [MoonSharpHidden] public Matrix4x4 self = Matrix4x4.zero;
 

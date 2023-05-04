@@ -1,5 +1,6 @@
 ﻿using MoonSharp.Interpreter;
 
+[CYFLuaClass("Inventory"), CYFOverworldClass]
 public class LuaInventoryOW {
     public ScriptWrapper appliedScript;
 

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using MoonSharp.Interpreter;
 
+[CYFLuaClass("Misc")]
 public class Misc {
     public string MachineName { get { return System.Environment.UserName; } }
 

@@ -1,14 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 using MoonSharp.Interpreter;
 using MoonSharp.Interpreter.Loaders;
 using UnityEngine;
 using Object = UnityEngine.Object;
-
-internal class LuaTextManagerDescriptor : MoonSharp.Interpreter.Interop.StandardUserDataDescriptor {
-    public LuaTextManagerDescriptor(Type type, InteropAccessMode accessMode) : base(type, accessMode) { }
-    public override string AsString(object obj) { return "LuaTextManager"; }
-}
 
 /// <summary>
 /// Takes care of creating <see cref="Script"/> objects with globally bound functions.
@@ -24,34 +20,19 @@ public static class LuaScriptBinder {
     /// Registers C# types with MoonSharp so we can bind them to Lua scripts later.
     /// </summary>
     static LuaScriptBinder() {
-        // Battle bindings
-        UserData.RegisterType<MusicManager>();
-        UserData.RegisterType<NewMusicManager>();
-        UserData.RegisterType<ProjectileController>();
-        UserData.RegisterType<LuaArenaStatus>();
-        UserData.RegisterType<LuaPlayerStatus>();
-        UserData.RegisterType<LuaInputBinding>();
-        UserData.RegisterType<LuaUnityTime>();
-        UserData.RegisterType<ScriptWrapper>();
-        UserData.RegisterType<LuaSpriteController>();
-        UserData.RegisterType<LuaInventory>();
-        UserData.RegisterType<Misc>();
-        UserData.RegisterType<LuaTextManager>(new LuaTextManagerDescriptor(typeof(LuaTextManager), InteropAccessMode.Default));
-        UserData.RegisterType<LuaFile>();
-        UserData.RegisterType<LuaSpriteShader>();
-        UserData.RegisterType<LuaSpriteShader.MatrixFourByFour>();
-        UserData.RegisterType<LuaDiscord>();
-        UserData.RegisterType<LuaPlayerUI>();
-        UserData.RegisterType<LifeBarController>();
-        UserData.RegisterType<LuaCYFObject>();
-
-        // Overworld bindings
-        UserData.RegisterType<LuaEventOW>();
-        UserData.RegisterType<LuaPlayerOW>();
-        UserData.RegisterType<LuaGeneralOW>();
-        UserData.RegisterType<LuaInventoryOW>();
-        UserData.RegisterType<LuaScreenOW>();
-        UserData.RegisterType<LuaMapOW>();
+        Assembly cyfAssembly = Assembly.GetExecutingAssembly();
+        foreach (Type t in cyfAssembly.GetTypes()) {
+            object[] luaClassAttributes = t.GetCustomAttributes(typeof(CYFLuaClassAttribute), false);
+            if (luaClassAttributes.Length > 0) {
+                CYFLuaClassAttribute luaClass = (CYFLuaClassAttribute)luaClassAttributes[0];
+                if (luaClass != null) {
+                    if (luaClass.descriptor == null)
+                        UserData.RegisterType(t, InteropAccessMode.Default, luaClass.friendlyName);
+                    else
+                        UserData.RegisterType((MoonSharp.Interpreter.Interop.IUserDataDescriptor)cyfAssembly.CreateInstance(luaClass.descriptor.Name));
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -246,34 +227,6 @@ public static class LuaScriptBinder {
 
     public static void ClearVariables() {
         dict.Clear();
-        // Battle bindings
-        UserData.RegisterType<MusicManager>();
-        UserData.RegisterType<NewMusicManager>();
-        UserData.RegisterType<ProjectileController>();
-        UserData.RegisterType<LuaArenaStatus>();
-        UserData.RegisterType<LuaPlayerStatus>();
-        UserData.RegisterType<LuaInputBinding>();
-        UserData.RegisterType<LuaUnityTime>();
-        UserData.RegisterType<ScriptWrapper>();
-        UserData.RegisterType<LuaSpriteController>();
-        UserData.RegisterType<LuaInventory>();
-        UserData.RegisterType<Misc>();
-        UserData.RegisterType<LuaTextManager>(new LuaTextManagerDescriptor(typeof(LuaTextManager), InteropAccessMode.Default));
-        UserData.RegisterType<LuaFile>();
-        UserData.RegisterType<LuaSpriteShader>();
-        UserData.RegisterType<LuaSpriteShader.MatrixFourByFour>();
-        UserData.RegisterType<LuaDiscord>();
-        UserData.RegisterType<LuaPlayerUI>();
-        UserData.RegisterType<LifeBarController>();
-        UserData.RegisterType<LuaCYFObject>();
-
-        // Overworld bindings
-        UserData.RegisterType<LuaEventOW>();
-        UserData.RegisterType<LuaPlayerOW>();
-        UserData.RegisterType<LuaGeneralOW>();
-        UserData.RegisterType<LuaInventoryOW>();
-        UserData.RegisterType<LuaScreenOW>();
-        UserData.RegisterType<LuaMapOW>();
     }
 
     /// <summary>

@@ -42,7 +42,6 @@ public class EventManager : MonoBehaviour {
     public  bool eventsLoaded;          // True if all initialization pages (event page 0) have been executed
     public  bool initialized;           // True if EventManager has been initialized properly. Might be useless?
 
-    private readonly Dictionary<Type, string> _boundValueName = new Dictionary<Type, string>();   // Used to generate the prefix and suffix of any event script
     public LuaPlayerOW luaPlayerOw;         // Instance of LuaPlayerOW used to execute event functions
     public LuaEventOW luaEventOw;           // Instance of LuaEventOW used to execute event functions
     public LuaGeneralOW luaGeneralOw;       // Instance of LuaGeneralOW used to execute event functions
@@ -59,13 +58,7 @@ public class EventManager : MonoBehaviour {
         _eventLayer = LayerMask.GetMask("EventLayer");
         _textManager = GameObject.Find("TextManager OW").GetComponent<TextManager>();
         // Create all instances of event function classes and store them
-        if (_boundValueName.Count == 0) {
-            _boundValueName.Add(typeof(LuaEventOW), "Event");
-            _boundValueName.Add(typeof(LuaPlayerOW), "Player");
-            _boundValueName.Add(typeof(LuaGeneralOW), "General");
-            _boundValueName.Add(typeof(LuaInventoryOW), "Inventory");
-            _boundValueName.Add(typeof(LuaScreenOW), "Screen");
-            _boundValueName.Add(typeof(LuaMapOW), "Map");
+        if (luaPlayerOw == null) {
             luaPlayerOw = new LuaPlayerOW();
             luaEventOw = new LuaEventOW();
             luaGeneralOw = new LuaGeneralOW(_textManager);
@@ -512,7 +505,7 @@ public class EventManager : MonoBehaviour {
     /// <returns>True if the function has the CYFEventFunction attribute, false otherwise.</returns>
     private static bool MethodHasCyfEventFunctionAttribute(MemberInfo mb) {
         const bool includeInherited = false;
-        return mb.GetCustomAttributes(typeof(CYFEventFunction), includeInherited).Any();
+        return mb.GetCustomAttributes(typeof(CYFEventFunctionAttribute), includeInherited).Any();
     }
 
     /// <summary>
@@ -520,16 +513,19 @@ public class EventManager : MonoBehaviour {
     /// </summary>
     private void GenerateEventCode() {
         _eventCodeFirst = string.Empty;
-        // Parse all event function objects
-        foreach (Type t in _boundValueName.Keys) {
-            IEnumerable<string> members = CreateBindListMember(t);
-            _eventCodeFirst += "\n" + _boundValueName[t] + " = {";
-            // Get all the functions of the current event function object and add it to the event script's prefix
-            foreach (string member in members)
-                // Store all functions as a call to CYFEventForwarder
-                _eventCodeFirst += "\n    " + member + " = function(...) CYFEventLastAction = '" + _boundValueName[t] + "." + member + "' return CYFEventForwarder(F" + _boundValueName[t] + "." + member + ", ...) end,";
-            // Throw an error if the user tries to add or get a value from the new, table-based object
-            _eventCodeFirst += "\n}\nsetmetatable(" + _boundValueName[t] + @", {
+        foreach (Type t in Assembly.GetExecutingAssembly().GetTypes()) {
+            object[] luaClassAttributes = t.GetCustomAttributes(typeof(CYFLuaClassAttribute), false);
+            if (luaClassAttributes.Length > 0) {
+                CYFLuaClassAttribute luaClass = (CYFLuaClassAttribute)luaClassAttributes[0];
+                if (luaClass != null && t.GetCustomAttributes(typeof(CYFOverworldClassAttribute), false).Length > 0) {
+                    IEnumerable<string> members = CreateBindListMember(t);
+                    _eventCodeFirst += "\n" + luaClass.friendlyName + " = {";
+                    // Get all the functions of the current event function object and add it to the event script's prefix
+                    foreach (string member in members)
+                        // Store all functions as a call to CYFEventForwarder
+                        _eventCodeFirst += "\n    " + member + " = function(...) CYFEventLastAction = '" + luaClass.friendlyName + "." + member + "' return CYFEventForwarder(F" + luaClass.friendlyName + "." + member + ", ...) end,";
+                    // Throw an error if the user tries to add or get a value from the new, table-based object
+                    _eventCodeFirst += "\n}\nsetmetatable(" + luaClass.friendlyName + @", {
     __index = function(t, k)
         error(""cannot access field "" .. tostring(k) .. "" of userdata <" + t + @">"", 2)
     end,
@@ -537,6 +533,8 @@ public class EventManager : MonoBehaviour {
         error(""cannot access field "" .. tostring(k) .. "" of userdata <" + t + @">"", 2)
     end
 })";
+                }
+            }
         }
         _eventCodeFirst += @"
 CYFEventCoroutine = coroutine.create(DEBUG) -- Coroutine for the current event script

@@ -3,6 +3,7 @@ using UnityEngine;
 using MoonSharp.Interpreter;
 using UnityEngine.SceneManagement;
 
+[CYFLuaClass("Map"), CYFOverworldClass]
 public class LuaMapOW {
     public ScriptWrapper appliedScript;
 

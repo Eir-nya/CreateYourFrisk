@@ -1,6 +1,7 @@
 ﻿/// <summary>
 /// Lua binding to set and retrieve information for the on-screen player.
 /// </summary>
+[CYFLuaClass("Player")]
 public class LuaPlayerStatus {
     /// <summary>
     /// This Lua controller's attached PlayerController.

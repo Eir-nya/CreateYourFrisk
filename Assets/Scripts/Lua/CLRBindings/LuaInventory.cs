@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 
+[CYFLuaClass("Inventory")]
 public class LuaInventory {
     public string GetItem(int index) {
         if (index <= Inventory.inventory.Count) return Inventory.inventory[index - 1].Name;

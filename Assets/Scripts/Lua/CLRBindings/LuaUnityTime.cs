@@ -3,6 +3,7 @@
 /// <summary>
 /// Lua binding to retrieve engine timing information. Not marked as static so Lua may have an instance to refer to. Silly, I know.
 /// </summary>
+[CYFLuaClass("Time")]
 public class LuaUnityTime {
     /// <summary>
     /// Time in seconds since the application started.

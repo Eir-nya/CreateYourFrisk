@@ -8,6 +8,7 @@ using UnityEngine.UI;
 /// Sprites can be used instead of the standard "px" sprite, however the sprites for the
 /// background and fill must have the same size.
 /// </summary>
+[CYFLuaClass("LifeBar")]
 public class LifeBarController : MonoBehaviour {
     public LuaSpriteController background, mask, fill, outline;
     [MoonSharpHidden] public RectTransform backgroundRt, maskRt, fillRt, outlineRt;
