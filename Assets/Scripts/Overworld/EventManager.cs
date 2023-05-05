@@ -504,8 +504,7 @@ public class EventManager : MonoBehaviour {
     /// <param name="mb">Function to check.</param>
     /// <returns>True if the function has the CYFEventFunction attribute, false otherwise.</returns>
     private static bool MethodHasCyfEventFunctionAttribute(MemberInfo mb) {
-        const bool includeInherited = false;
-        return mb.GetCustomAttributes(typeof(CYFEventFunctionAttribute), includeInherited).Any();
+        return mb.GetCustomAttribute(typeof(CYFEventFunctionAttribute), false) != null;
     }
 
     /// <summary>
@@ -514,10 +513,10 @@ public class EventManager : MonoBehaviour {
     private void GenerateEventCode() {
         _eventCodeFirst = string.Empty;
         foreach (Type t in Assembly.GetExecutingAssembly().GetTypes()) {
-            object[] luaClassAttributes = t.GetCustomAttributes(typeof(CYFLuaClassAttribute), false);
-            if (luaClassAttributes.Length > 0) {
-                CYFLuaClassAttribute luaClass = (CYFLuaClassAttribute)luaClassAttributes[0];
-                if (luaClass != null && t.GetCustomAttributes(typeof(CYFOverworldClassAttribute), false).Length > 0) {
+            Attribute luaClassAttr = t.GetCustomAttribute(typeof(CYFLuaClassAttribute));
+            if (luaClassAttr != null) {
+                CYFLuaClassAttribute luaClass = (CYFLuaClassAttribute)luaClassAttr;
+                if (luaClass != null && t.GetCustomAttribute(typeof(CYFOverworldClassAttribute)) != null) {
                     IEnumerable<string> members = CreateBindListMember(t);
                     _eventCodeFirst += "\n" + luaClass.friendlyName + " = {";
                     // Get all the functions of the current event function object and add it to the event script's prefix

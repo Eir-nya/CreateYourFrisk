@@ -22,9 +22,9 @@ public static class LuaScriptBinder {
     static LuaScriptBinder() {
         Assembly cyfAssembly = Assembly.GetExecutingAssembly();
         foreach (Type t in cyfAssembly.GetTypes()) {
-            object[] luaClassAttributes = t.GetCustomAttributes(typeof(CYFLuaClassAttribute), false);
-            if (luaClassAttributes.Length > 0) {
-                CYFLuaClassAttribute luaClass = (CYFLuaClassAttribute)luaClassAttributes[0];
+            Attribute luaClassAttr = t.GetCustomAttribute(typeof(CYFLuaClassAttribute));
+            if (luaClassAttr != null) {
+                CYFLuaClassAttribute luaClass = (CYFLuaClassAttribute)luaClassAttr;
                 if (luaClass != null) {
                     if (luaClass.descriptor == null)
                         UserData.RegisterType(t, InteropAccessMode.Default, luaClass.friendlyName);
