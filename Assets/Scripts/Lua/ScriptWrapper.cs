@@ -15,8 +15,8 @@ public class ScriptWrapper {
         set { SetVar(key, value); }
     }
 
-    public ScriptWrapper(/*bool overworld = false*/) {
-        script = LuaScriptBinder.BoundScript(/*overworld*/);
+    public ScriptWrapper(ScriptTemplate scriptTemplate) {
+        script = LuaScriptBinder.BoundScript(scriptTemplate);
         Bind("_getv", (Func<Script, string, DynValue>)GetVar);
         DoString(toDoString);
         instances.Add(this);

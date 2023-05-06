@@ -519,6 +519,120 @@ public class LuaTextManager : TextManager {
             EnemyEncounter.script.Call("OnTextDisplay", UserData.Create(this));
     }
 
+    public static LuaTextManager CreateText(Script scr, DynValue text, DynValue position, int textWidth, string layer = "BelowPlayer", int bubbleHeight = -1) {
+        // Check if the arguments are what they should be
+        if (text == null || (text.Type != DataType.Table && text.Type != DataType.String))
+            throw new CYFException("CreateText: The text argument must be a non-empty table of strings or a simple string.");
+        if (position == null || position.Type != DataType.Table || position.Table.Get(1).Type != DataType.Number || position.Table.Get(2).Type != DataType.Number)
+            throw new CYFException("CreateText: The position argument must be a non-empty table of two numbers.");
+
+        GameObject go = GameObject.Instantiate(Resources.Load<GameObject>("Prefabs/CstmTxtContainer"));
+        LuaTextManager luatm = go.GetComponentInChildren<LuaTextManager>();
+        luatm.MoveToAbs((float)position.Table.Get(1).Number, (float)position.Table.Get(2).Number);
+
+        UnitaleUtil.GetChildPerName(go.transform, "BubbleContainer").GetComponent<RectTransform>().pivot = new Vector2(0, 1);
+        UnitaleUtil.GetChildPerName(go.transform, "BubbleContainer").GetComponent<RectTransform>().localPosition = new Vector2(-12, 8);
+        UnitaleUtil.GetChildPerName(go.transform, "BubbleContainer").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth + 20, 100);     //Used to set the borders
+        UnitaleUtil.GetChildPerName(go.transform, "BackHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth + 20, 100 - 20 * 2);   //BackHorz
+        UnitaleUtil.GetChildPerName(go.transform, "BackVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth - 20, 100);            //BackVert
+        UnitaleUtil.GetChildPerName(go.transform, "CenterHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth + 16, 96 - 16 * 2);  //CenterHorz
+        UnitaleUtil.GetChildPerName(go.transform, "CenterVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textWidth - 16, 96);           //CenterVert
+        luatm.Move(0, 0);
+        foreach (ScriptWrapper scrWrap in ScriptWrapper.instances) {
+            if (scrWrap.script != scr) continue;
+            luatm.SetCaller(scrWrap);
+            break;
+        }
+        // Layers don't exist in the overworld, so we don't set it
+        if (!UnitaleUtil.IsOverworld || GlobalControls.isInShop)
+            luatm.layer = layer;
+        else
+            luatm.layer = (layer == "BelowPlayer" ? "Default" : layer);
+
+        // Converts the text argument into a table if it's a simple string
+        text = text.Type == DataType.String ? DynValue.NewTable(scr, text) : text;
+
+        //////////////////////////////////////////
+        ///////////  LATE START SETTER  //////////
+        //////////////////////////////////////////
+
+        // Text objects' Late Start will be disabled if the first line of text contains [instant] before any regular characters
+        bool enableLateStart = true;
+
+        // if we've made it this far, then the text is valid.
+
+        // so, let's scan the first line of text for [instant]
+        string firstLine = text.Table.Get(1).String;
+
+        // if [instant] or [instant:allowcommand] is found, check for the earliest match, and whether it is at the beginning
+        if (firstLine.IndexOf("[instant]", StringComparison.OrdinalIgnoreCase) > -1 || firstLine.IndexOf("[instant:allowcommand]", StringComparison.OrdinalIgnoreCase) > -1) {
+            // determine whether [instant] or [instant:allowcommand] is first
+            string testFor = "[instant]";
+            if (firstLine.IndexOf("[instant:allowcommand]", StringComparison.OrdinalIgnoreCase) > -1 &&
+                firstLine.IndexOf("[instant:allowcommand]", StringComparison.OrdinalIgnoreCase) < firstLine.IndexOf("[instant]", StringComparison.OrdinalIgnoreCase) || firstLine.IndexOf("[instant]", StringComparison.OrdinalIgnoreCase) == -1)
+                testFor = "[instant:allowcommand]";
+
+            // grab all of the text that comes before the matched command
+            string precedingText = firstLine.Substring(0, firstLine.IndexOf(testFor, StringComparison.OrdinalIgnoreCase));
+
+            // remove all commands other than the matched command from this variable
+            while (precedingText.IndexOf('[') > -1) {
+                int i = 0;
+                if (UnitaleUtil.ParseCommandInline(precedingText, ref i) == null) break;
+                precedingText = precedingText.Replace(precedingText.Substring(0, i + 1), "");
+            }
+
+            // if the length of the remaining string is 0, then disable late start!
+            if (precedingText.Length == 0)
+                enableLateStart = false;
+        }
+
+        //////////////////////////////////////////
+        /////////// INITIAL FONT SETTER //////////
+        //////////////////////////////////////////
+
+        // If the first line of text has [font] at the beginning, use it initially!
+        if (firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase) > -1 && firstLine.Substring(firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase)).IndexOf(']') > -1) {
+            // grab all of the text that comes before the matched command
+            string precedingText = firstLine.Substring(0, firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase));
+
+            // remove all commands other than the matched command from this variable
+            while (precedingText.IndexOf('[') > -1) {
+                int i = 0;
+                if (UnitaleUtil.ParseCommandInline(precedingText, ref i) == null) break;
+                precedingText = precedingText.Replace(precedingText.Substring(0, i + 1), "");
+            }
+
+            // if the length of the remaining string is 0, then set the font!
+            if (precedingText.Length == 0) {
+                int startCommand = firstLine.IndexOf("[font:", StringComparison.OrdinalIgnoreCase);
+                string command = UnitaleUtil.ParseCommandInline(precedingText, ref startCommand);
+                if (command != null) {
+                    string fontPartOne = command.Substring(6);
+                    string fontPartTwo = fontPartOne.Substring(0, fontPartOne.IndexOf("]", StringComparison.OrdinalIgnoreCase));
+                    UnderFont font = SpriteFontRegistry.Get(fontPartTwo);
+                    if (font == null)
+                        throw new CYFException("The font \"" + fontPartTwo + "\" doesn't exist.\nYou should check if you made a typo, or if the font really is in your mod.");
+                    luatm.SetFont(font, true);
+                } else luatm.ResetFont();
+            } else     luatm.ResetFont();
+        } else         luatm.ResetFont();
+
+        // Bubble variables
+        luatm.bubble = true;
+        luatm.textMaxWidth = textWidth;
+        luatm.bubbleHeight = bubbleHeight;
+
+        if (enableLateStart)
+            luatm.lateStartWaiting = true;
+        luatm.SetText(text, false);
+        luatm.ShowBubble();
+
+        if (!enableLateStart) return luatm;
+        luatm.LateStart();
+        return luatm;
+    }
+
     [MoonSharpHidden] public void LateStart() { StartCoroutine(LateStartSetText()); }
 
     private IEnumerator LateStartSetText(bool waitUntilEndOfFrame = true) {

@@ -1,4 +1,5 @@
-﻿using MoonSharp.Interpreter;
+﻿using CYF;
+using MoonSharp.Interpreter;
 
 [CYFLuaClass("Inventory"), CYFOverworldClass]
 public class LuaInventoryOW {

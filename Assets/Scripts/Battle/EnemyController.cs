@@ -306,26 +306,10 @@ public class EnemyController : MonoBehaviour {
     public void InitializeEnemy() {
         try {
             string scriptText = FileLoader.GetScript("Monsters/" + scriptName, StaticInits.ENCOUNTER, "monster");
-            script.scriptname = scriptName;
-            script.Bind("SetSprite", (Action<string>)SetSprite);
-            script.Bind("SetActive", (Action<bool>)SetActive);
-            script.Bind("isactive", DynValue.NewBoolean(true));
-            script.Bind("Kill", (Action<bool>)DoKill);
-            script.Bind("Spare", (Action<bool>)DoSpare);
-            script.Bind("Move", (Action<float, float>)Move);
-            script.Bind("MoveTo", (Action<float, float>)MoveTo);
-            script.Bind("BindToArena", (Action<bool, bool>)BindToArena);
-            script.Bind("SetDamage", (Action<int>)SetDamage);
-            script.Bind("SetBubbleOffset", (Action<int, int>)SetBubbleOffset);
-            script.Bind("SetDamageUIOffset", (Action<int, int>)SetDamageUIOffset);
-            script.Bind("SetSliceAnimOffset", (Action<int, int>)SetSliceAnimOffset);
-            script.Bind("State", (Action<Script, string>)UIController.SwitchStateOnString);
-            script.Bind("Remove", (Action)Remove);
-            script.SetVar("canmove", DynValue.NewBoolean(true));
             sprite = LuaSpriteController.GetOrCreate(gameObject);
-            script.SetVar("monstersprite", UserData.Create(sprite, LuaSpriteController.data));
-            script.SetVar("bubblesprite", UserData.Create(LuaSpriteController.GetOrCreate(bubbleObject)));
-            script.SetVar("textobject", UserData.Create(bubbleObject.GetComponentInChildren<LuaTextManager>()));
+
+            script = new ScriptWrapper(new EnemyScriptTemplate(this)) { scriptname = scriptName };
+            bubbleObject.GetComponentInChildren<LuaTextManager>().SetCaller(script);
             script.DoString(scriptText);
 
             string spriteFile = script.GetVar("sprite").String;

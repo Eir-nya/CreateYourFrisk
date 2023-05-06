@@ -1,4 +1,5 @@
-﻿using System;
+﻿using CYF;
+using System;
 using System.Linq;
 
 /// <summary>
@@ -21,7 +22,6 @@ public class UnderItem {
         }
 
         if (Inventory.NametoDesc.Keys.Count == 0) {
-            Inventory.luaInventory = new LuaInventory();
             Inventory.AddItemsToDictionaries();
         }
 

@@ -4,6 +4,7 @@ using System.Linq;
 using UnityEngine;
 using MoonSharp.Interpreter;
 
+namespace CYF {
 /// <summary>
 /// Static placeholder inventory class for the player. Will probably get moved to something else that makes sense, like the player...or not.
 /// </summary>
@@ -18,6 +19,10 @@ public static class Inventory {
     public static bool usedItemNoDelete;
     //public static bool overworld = false;
     public static List<UnderItem> inventory = new List<UnderItem>();
+
+    static Inventory() {
+        luaInventory = new LuaInventory();
+    }
 
     public static void SetItemList(string[] items) {
         foreach (string item in items) {
@@ -582,4 +587,5 @@ public static class Inventory {
         addedItems = new List<string>();
         addedItemsTypes = new List<int>();
     }
+}
 }

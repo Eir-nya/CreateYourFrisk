@@ -272,6 +272,6 @@ public class LuaPlayerUI {
     }
 
     public void UpdateButtons() {
-        LuaScriptBinder.SetAction(UIController.instance.action.ToString());
+        EnemyEncounter.SetAction(UIController.instance.action.ToString());
     }
 }

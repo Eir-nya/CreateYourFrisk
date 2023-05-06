@@ -1,4 +1,5 @@
-﻿using System;
+﻿using CYF;
+using System;
 using System.Linq;
 using MoonSharp.Interpreter;
 using UnityEngine;
@@ -38,18 +39,11 @@ public class ShopScript : MonoBehaviour {
         if (scriptName == null)
             throw new CYFException("You must give a valid script name to the function General.EnterShop()");
 
-        script = new ScriptWrapper {
-            scriptname = scriptName
-        };
+        script = new ScriptWrapper(new ShopScriptTemplate(this)) { scriptname = scriptName };
         string scriptText = FileLoader.GetScript("Shops/" + scriptName, "Loading a shop", "event");
 
         try {
             script.DoString(scriptText);
-            script.SetVar("background", UserData.Create(LuaSpriteController.GetOrCreate(GameObject.Find("Background"))));
-            script.script.Globals["Interrupt"] = ((Action<DynValue, string>) Interrupt);
-            script.script.Globals["CreateSprite"] = (Func<string, string, int, DynValue>) SpriteUtil.MakeIngameSprite;
-            script.script.Globals["CreateLayer"] = (Func<string, string, bool, bool>) SpriteUtil.CreateLayer;
-            script.script.Globals["CreateText"] = (Func<Script, DynValue, DynValue, int, string, int, LuaTextManager>) LuaScriptBinder.CreateText;
             UnitaleUtil.TryCall(script, "Start");
 
             tmMain.SetCaller(script);
@@ -74,8 +68,6 @@ public class ShopScript : MonoBehaviour {
 
     }
 
-    private delegate TResult Func<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg, T6 arg6);
-
     // void CreateLayer(string name, string relatedTag = "BelowUI", bool before = false) { SpriteUtil.CreateLayer(name, relatedTag, before); }
     // DynValue CreateSprite(string filename, string tag = "BelowUI", int childNumber = -1) { return SpriteUtil.MakeIngameSprite(filename, tag, childNumber); }
 
@@ -87,7 +79,7 @@ public class ShopScript : MonoBehaviour {
         return msgs;
     }
 
-    private void Interrupt(DynValue text, string nextState = "MENU") {
+    internal void Interrupt(DynValue text, string nextState = "MENU") {
         if (currentState == State.INTERRUPT) return;
         UnitaleUtil.TryCall(script, "OnInterrupt", DynValue.NewString(nextState));
         try { interruptState = (State)Enum.Parse(typeof(State), nextState, true); }

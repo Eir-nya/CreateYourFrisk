@@ -1,4 +1,5 @@
-﻿using System;
+﻿using CYF;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using MoonSharp.Interpreter;
@@ -20,9 +21,6 @@ public class EnemyEncounter : MonoBehaviour {
     private ScriptWrapper[] waves;
     private string[] waveNames;
     public bool gameOverStance;
-    public static bool doNotGivePreviousEncounterToSelf;
-
-    private delegate TResult Func<T1, T2, T3, T4, T5, TResult>(T1 arg, T2 arg2, T3 arg3, T4 arg4, T5 arg5);
 
     public void Awake() {
         InitScript();
@@ -35,19 +33,10 @@ public class EnemyEncounter : MonoBehaviour {
     /// <summary>
     /// Attempts to initialize the encounter's script file and bind encounter-specific functions to it.
     /// </summary>
-    /// <returns>True if initialization succeeded, false if there was an error.</returns>
     public void InitScript() {
-        doNotGivePreviousEncounterToSelf = true;
-        script = new ScriptWrapper { scriptname = StaticInits.ENCOUNTER };
+        script = new ScriptWrapper(new EncounterScriptTemplate()) { scriptname = StaticInits.ENCOUNTER };
 
         script.DoString(FileLoader.GetScript("Encounters/" + StaticInits.ENCOUNTER, StaticInits.ENCOUNTER, "encounter"));
-        script.Bind("State", (Action<Script, string>)UIController.SwitchStateOnString);
-        script.Bind("RandomEncounterText", (Func<string>)RandomEncounterText);
-        script.Bind("CreateProjectile", (Func<Script, string, float, float, string, DynValue>)CreateProjectile);
-        script.Bind("CreateProjectileAbs", (Func<Script, string, float, float, string, DynValue>)CreateProjectileAbs);
-        script.Bind("SetButtonLayer", (Action<string>)LuaScriptBinder.SetButtonLayer);
-        script.Bind("CreateEnemy", (Func<string, float, float, DynValue>)CreateEnemy);
-        script.Bind("Flee", (Action)Flee);
 
         LoadEnemiesAndPositions();
     }
@@ -62,9 +51,8 @@ public class EnemyEncounter : MonoBehaviour {
         enemyController.scriptName = enemyScript;
         enemyController.index = enemies.Count - 1;
         enemyController.GetComponent<RectTransform>().anchoredPosition = new Vector2(x, y);
-        enemyController.script = new ScriptWrapper();
-        enemies.Add(enemyController);
         enemyController.CreateBubble();
+        enemies.Add(enemyController);
         enemyController.InitializeEnemy();
 
         return UserData.Create(enemyController.script);
@@ -72,6 +60,36 @@ public class EnemyEncounter : MonoBehaviour {
 
     public void Flee() {
         StartCoroutine(UIController.instance.ISuperFlee());
+    }
+
+    public static void SetButtonLayer(string layer) {
+        GameObject obj1 = GameObject.Find("Stats");
+        GameObject obj2 = GameObject.Find("UIRect");
+        Transform parent1 = obj1.transform.parent;
+        Transform parent2 = obj2.transform.parent;
+        try {
+            if (layer == "default") {
+                obj1.transform.SetParent(GameObject.Find("Canvas").transform);
+                obj1.transform.SetSiblingIndex(obj1.transform.parent.GetComponentInChildren<UIController>().transform.GetSiblingIndex() + 1);
+                obj2.transform.SetParent(GameObject.Find("Canvas").transform);
+                obj2.transform.SetSiblingIndex(obj2.transform.parent.GetComponentInChildren<UIController>().transform.GetSiblingIndex() + 1);
+            } else {
+                obj1.transform.SetParent(GameObject.Find(layer + "Layer").transform);
+                obj2.transform.SetParent(GameObject.Find(layer + "Layer").transform);
+            }
+        }
+        catch {
+            obj1.transform.SetParent(parent1);
+            obj2.transform.SetParent(parent2);
+        }
+    }
+
+    public static void SetAction(string action) {
+        try {
+            UIController.instance.forcedAction = (UIController.Actions)Enum.Parse(typeof(UIController.Actions), action, true);
+            if (UIController.instance.forcedAction != UIController.Actions.NONE)
+                UIController.instance.MovePlayerToAction(UIController.instance.forcedAction);
+        } catch { throw new CYFException("SetAction() can only take \"FIGHT\", \"ACT\", \"ITEM\" or \"MERCY\", but you entered \"" + action + "\"."); }
     }
 
     public bool CallOnSelfOrChildren(string func, DynValue[] param = null) {
@@ -160,7 +178,7 @@ public class EnemyEncounter : MonoBehaviour {
         //    musicSource.Play(); // play that funky music
     }
 
-    protected string RandomEncounterText() {
+    internal string RandomEncounterText() {
         if (EnabledEnemies.Length <= 0)
             return "";
         int randomEnemy = Random.Range(0, EnabledEnemies.Length);
@@ -266,7 +284,7 @@ public class EnemyEncounter : MonoBehaviour {
                 enemy.GetComponent<Image>().color = new Color(0.2f, 0.2f, 0.2f);
     }
 
-    [HideInInspector] public DynValue CreateProjectileAbs(Script s, string sprite, float xpos, float ypos, string layerName = "") {
+    [HideInInspector] public static DynValue CreateProjectileAbs(Script s, string sprite, float xpos, float ypos, string layerName = "") {
         LuaProjectile projectile = (LuaProjectile)BulletPool.instance.Retrieve();
         if (sprite == null)
             throw new CYFException("You can't create a projectile with a nil sprite!");
@@ -294,7 +312,7 @@ public class EnemyEncounter : MonoBehaviour {
         return projectileController;
     }
 
-    private DynValue CreateProjectile(Script s, string sprite, float xpos, float ypos, string layerName = "") {
+    internal static DynValue CreateProjectile(Script s, string sprite, float xpos, float ypos, string layerName = "") {
         return CreateProjectileAbs(s, sprite, ArenaManager.arenaCenter.x + xpos, ArenaManager.arenaCenter.y + ypos, layerName);
     }
 
@@ -340,11 +358,7 @@ public class EnemyEncounter : MonoBehaviour {
             List<int> indexes = new List<int>();
             for (int i = 0; i < waves.Length; i++) {
                 currentWaveScript = i;
-                waves[i] = new ScriptWrapper { scriptname = nextWaves.Table.Get(i + 1).String };
-                waves[i].script.Globals["EndWave"] = (Action)EndWaveTimer;
-                waves[i].script.Globals["State"] = (Action<Script, string>)UIController.SwitchStateOnString;
-                waves[i].script.Globals["CreateProjectile"] = (Func<Script, string, float, float, string, DynValue>)CreateProjectile;
-                waves[i].script.Globals["CreateProjectileAbs"] = (Func<Script, string, float, float, string, DynValue>)CreateProjectileAbs;
+                waves[i] = new ScriptWrapper(new WaveScriptTemplate()) { scriptname = nextWaves.Table.Get(i + 1).String };
                 if (nextWaves.Table.Get(i + 1).Type != DataType.String){
                     UnitaleUtil.DisplayLuaError(StaticInits.ENCOUNTER, "Non-string value encountered in nextwaves table");
                     return;

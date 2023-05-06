@@ -626,9 +626,6 @@ function CYFEventForwarder(func, ...)
 end";
     }
 
-    // Handles 6 arguments for CreateText()
-    private delegate TResult Func<T1, T2, T3, T4, T5, T6, TResult>(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg, T6 arg6);
-
     /// <summary>
     /// Initializes event scripts so they can be used later.
     /// </summary>
@@ -637,7 +634,7 @@ end";
     /// <returns>A new script wrapper allowing the user to run script functions.</returns>
     private ScriptWrapper InitScript(string eventName, Component ev) {
         // Create a ScriptWrapper object
-        ScriptWrapper scr = new ScriptWrapper { scriptname = eventName };
+        ScriptWrapper scr = new ScriptWrapper(new EventScriptTemplate()) { scriptname = eventName };
         // Load a special script hidden within CYF's internals if we're loading CYF 0.6.5's secret
         string scriptText = UnitaleUtil.IsSpecialAnnouncement(eventName) ? CYF_RELEASE_SCRIPT : FileLoader.GetScript("Events/" + eventName, "Loading an event", "event");
         if (scriptText == null) {
@@ -658,11 +655,6 @@ end";
             UnitaleUtil.DisplayLuaError(eventName, ex.Message);
             return null;
         }
-
-        // Add a few useful functions to event scripts
-        scr.script.Globals["CreateLayer"] = (Func<string, string, bool, bool>) SpriteUtil.CreateLayer;
-        scr.script.Globals["CreateSprite"] = (Func<string, string, int, DynValue>) SpriteUtil.MakeIngameSprite;
-        scr.script.Globals["CreateText"] = (Func<Script, DynValue, DynValue, int, string, int, LuaTextManager>) LuaScriptBinder.CreateText;
 
         // Actually execute the loaded script
         try { scr.DoString(scriptText); }

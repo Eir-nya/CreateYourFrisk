@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using CYF;
+using System.Collections.Generic;
 
 [CYFLuaClass("Inventory")]
 public class LuaInventory {

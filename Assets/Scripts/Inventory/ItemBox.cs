@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using CYF;
+using System.Collections.Generic;
 
 public static class ItemBox {
     public static int capacity = 10;
