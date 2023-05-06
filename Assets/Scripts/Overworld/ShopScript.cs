@@ -1,4 +1,6 @@
 ﻿using CYF;
+using CYF.Classes;
+using CYF.Scripts;
 using System;
 using System.Linq;
 using MoonSharp.Interpreter;

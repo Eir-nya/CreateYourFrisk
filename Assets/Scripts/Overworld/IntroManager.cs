@@ -1,4 +1,5 @@
-﻿using System;
+﻿using CYF.Classes;
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;

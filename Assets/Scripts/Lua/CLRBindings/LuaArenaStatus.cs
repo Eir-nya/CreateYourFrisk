@@ -1,4 +1,5 @@
-﻿/// <summary>
+﻿namespace CYF.Classes {
+/// <summary>
 /// Lua binding to set and retrieve information for the game's arena.
 /// </summary>
 [CYFLuaClass("Arena")]
@@ -82,4 +83,5 @@ public class LuaArenaStatus {
         if (immediate) ArenaManager.instance.MoveToAndResizeImmediate(x, y, width, height, movePlayer);
         else           ArenaManager.instance.MoveToAndResize(x, y, width, height, movePlayer);
     }
+}
 }

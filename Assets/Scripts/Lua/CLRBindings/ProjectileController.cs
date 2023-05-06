@@ -3,6 +3,7 @@ using MoonSharp.Interpreter;
 using UnityEngine;
 using UnityEngine.UI;
 
+namespace CYF.Classes {
 /// <summary>
 /// Lua binding to set and retrieve information for bullets in the game.
 /// </summary>
@@ -275,4 +276,5 @@ public class ProjectileController {
             tab[i] = GetChild(i + 1);
         return tab;
     }
+}
 }

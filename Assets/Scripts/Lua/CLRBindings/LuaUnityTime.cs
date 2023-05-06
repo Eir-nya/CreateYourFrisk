@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 
+namespace CYF.Classes {
 /// <summary>
 /// Lua binding to retrieve engine timing information. Not marked as static so Lua may have an instance to refer to. Silly, I know.
 /// </summary>
@@ -30,4 +31,5 @@ public class LuaUnityTime {
     }
 
     public static float frameCount { get { return GlobalControls.frame; } }
+}
 }

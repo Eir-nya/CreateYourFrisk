@@ -1,6 +1,7 @@
+using CYF.Classes;
 using MoonSharp.Interpreter;
-using UnityEngine;
 
+namespace CYF.Scripts {
 public class EncounterScriptTemplate : ScriptTemplate {
     [MoonSharpHidden] public override ScriptType scriptType { get { return ScriptType.ENCOUNTER; } }
 
@@ -69,4 +70,5 @@ public class EncounterScriptTemplate : ScriptTemplate {
     [CYFDontAddToScript] public static void EnemyDialogueEnding() {}
     [CYFDontAddToScript] public static void HandleSpare() {}
     [CYFDontAddToScript] public static void HandleFlee(bool fleeSuccess) {}
+}
 }

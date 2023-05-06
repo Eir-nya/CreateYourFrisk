@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using MoonSharp.Interpreter;
 
+namespace CYF.Classes.Overworld {
 [CYFLuaClass("General"), CYFOverworldClass]
 public class LuaGeneralOW {
     private readonly TextManager textmgr;
@@ -280,4 +281,5 @@ public class LuaGeneralOW {
         ShopScript.scriptName = scriptName;
         if (StCoroutine != null) StCoroutine("IEnterShop", instant, appliedScript.GetVar("_internalScriptName").String);
     }
+}
 }

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using MoonSharp.Interpreter;
 
+namespace CYF.Classes {
 [CYFLuaClass("Misc")]
 public class Misc {
     public string MachineName { get { return System.Environment.UserName; } }
@@ -401,4 +402,5 @@ public class Misc {
 
         private static Rect GetWindowRect() { return new Rect(); }
     #endif
+}
 }

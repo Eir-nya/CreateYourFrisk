@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using CYF.Classes;
+using UnityEngine;
 
 public class KeyframeCollection : MonoBehaviour {
     public float timePerFrame = 1 / 30f;

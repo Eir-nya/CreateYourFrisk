@@ -3,6 +3,7 @@ using MoonSharp.Interpreter;
 using System.Collections;
 using System.Collections.Generic;
 
+namespace CYF.Classes {
 [CYFLuaClass("NewAudio")]
 public class NewMusicManager {
     [MoonSharpHidden] public static Hashtable audiolist = new Hashtable();
@@ -220,4 +221,5 @@ public class NewMusicManager {
         audiolist.Add("StaticKeptAudio", PlayerOverworld.audioKept);
         audioname.Add("StaticKeptAudio", "Sorry, nyi");
     }
+}
 }

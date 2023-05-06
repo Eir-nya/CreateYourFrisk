@@ -1,6 +1,8 @@
+using CYF.Classes;
 using MoonSharp.Interpreter;
 using UnityEngine;
 
+namespace CYF.Scripts {
 public class ShopScriptTemplate : ScriptTemplate {
     [MoonSharpHidden] public override ScriptType scriptType { get { return ScriptType.SHOP; } }
 
@@ -39,4 +41,5 @@ public class ShopScriptTemplate : ScriptTemplate {
     [CYFDontAddToScript] public static void SuccessTalk(string talkOption) {}
     [CYFDontAddToScript] public static void EnterExit() {}
     [CYFDontAddToScript] public static void OnInterrupt(string newState) {}
+}
 }

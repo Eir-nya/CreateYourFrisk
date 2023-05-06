@@ -1,4 +1,5 @@
-﻿/// <summary>
+﻿namespace CYF.Classes {
+/// <summary>
 /// Lua binding to set and retrieve information for the on-screen player.
 /// </summary>
 [CYFLuaClass("Player")]
@@ -374,4 +375,5 @@ public class LuaPlayerStatus {
     }
 
     public void CheckDeath() { UIController.instance.needOnDeath = true; }
+}
 }

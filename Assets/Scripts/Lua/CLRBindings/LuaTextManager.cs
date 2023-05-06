@@ -6,10 +6,11 @@ using System.Linq;
 using MoonSharp.Interpreter;
 
 internal class LuaTextManagerDescriptor : MoonSharp.Interpreter.Interop.StandardUserDataDescriptor {
-    public LuaTextManagerDescriptor() : base(typeof(LuaTextManager), InteropAccessMode.Default) { }
+    public LuaTextManagerDescriptor() : base(typeof(CYF.Classes.LuaTextManager), InteropAccessMode.Default) { }
     public override string AsString(object obj) { return "LuaTextManager"; }
 }
 
+namespace CYF.Classes {
 [CYFLuaClass("Text", typeof(LuaTextManagerDescriptor))]
 public class LuaTextManager : TextManager {
     private GameObject container;
@@ -931,4 +932,5 @@ public class LuaTextManager : TextManager {
                 childmask.inverted = sParent._masked == LuaSpriteController.MaskMode.INVERTEDSPRITE || sParent._masked == LuaSpriteController.MaskMode.INVERTEDSTENCIL;
         }
     }
+}
 }

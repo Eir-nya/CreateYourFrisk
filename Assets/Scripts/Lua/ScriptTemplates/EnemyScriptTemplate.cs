@@ -1,6 +1,7 @@
+using CYF.Classes;
 using MoonSharp.Interpreter;
-using UnityEngine;
 
+namespace CYF.Scripts {
 public class EnemyScriptTemplate : ScriptTemplate {
     [MoonSharpHidden] public override ScriptType scriptType { get { return ScriptType.ENEMY; } }
 
@@ -86,4 +87,5 @@ public class EnemyScriptTemplate : ScriptTemplate {
     [CYFDontAddToScript] public static void BeforeDamageValues(int damage) {}
     [CYFDontAddToScript] public static void OnSpare() {}
     [CYFDontAddToScript] public static void OnDeath() {}
+}
 }

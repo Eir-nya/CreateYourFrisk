@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 
+namespace CYF.Classes {
 [CYFLuaClass("File")]
 public class LuaFile {
     private string[] content;
@@ -132,4 +133,5 @@ public class LuaFile {
         catch (PathTooLongException) { throw new CYFException("File.Copy: The destination path is too long:\n\"" + origNewPath + "\" (\"" + newPath + "\""); }
         catch (UnauthorizedAccessException) { throw new CYFException("File.Copy: Unauthorized access to file:\n\"" + origNewPath + "\"\n\nIt may be read-only or hidden."); }
     }
+}
 }

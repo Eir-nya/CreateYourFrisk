@@ -1,6 +1,7 @@
 ﻿using MoonSharp.Interpreter;
 using UnityEngine;
 
+namespace CYF.Classes {
 [CYFLuaClass("Object")]
 public class LuaCYFObject {
     public Transform transform;
@@ -41,4 +42,5 @@ public class LuaCYFObject {
             tab[i] = GetChild(i + 1);
         return tab;
     }
+}
 }

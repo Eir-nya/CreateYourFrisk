@@ -1,3 +1,4 @@
+using CYF.Scripts;
 using System;
 
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Method)]

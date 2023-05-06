@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
+namespace CYF.Classes {
 [CYFLuaClass("UI")]
 public class LuaPlayerUI {
     private readonly UIStats ui = UIStats.instance;
@@ -274,4 +275,5 @@ public class LuaPlayerUI {
     public void UpdateButtons() {
         EnemyEncounter.SetAction(UIController.instance.action.ToString());
     }
+}
 }

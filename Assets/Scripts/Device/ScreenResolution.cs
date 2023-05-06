@@ -1,3 +1,4 @@
+using CYF.Classes;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 

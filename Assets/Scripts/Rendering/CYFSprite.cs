@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using CYF.Classes;
+using UnityEngine;
 
 /// <summary>
 /// Class used to mark sprite objects. Holds its controller and such.

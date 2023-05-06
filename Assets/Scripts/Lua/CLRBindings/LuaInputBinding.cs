@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System;
 
+namespace CYF.Classes {
 [CYFLuaClass("Input")]
 public class LuaInputBinding {
     private readonly UndertaleInput input;
@@ -38,4 +39,5 @@ public class LuaInputBinding {
 
     public float mouseScroll { get { return Input.mouseScrollDelta.y; } }
     public float MouseScroll { get { return mouseScroll; } }
+}
 }

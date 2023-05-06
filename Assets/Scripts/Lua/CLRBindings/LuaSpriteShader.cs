@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using MoonSharp.Interpreter;
 using System.Collections.Generic;
 
+namespace CYF.Classes {
 [CYFLuaClass("Shader")]
 public class LuaSpriteShader {
     private readonly string mode;
@@ -371,4 +372,5 @@ public class LuaSpriteShader {
         }
         material.SetVectorArray(property, v4array);
     }
+}
 }

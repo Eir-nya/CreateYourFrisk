@@ -1,8 +1,10 @@
-﻿using UnityEngine;
+﻿using CYF.Scripts;
+using UnityEngine;
 using MoonSharp.Interpreter;
 using System;
 using System.Collections.Generic;
 
+namespace CYF.Classes {
 [CYFLuaClass("Script")]
 public class ScriptWrapper {
     [MoonSharpHidden] public static List<ScriptWrapper> instances = new List<ScriptWrapper>();
@@ -93,4 +95,5 @@ public class ScriptWrapper {
     }
 
     internal void Bind(string key, object func)      { script.Globals[key] = func; }
+}
 }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using MoonSharp.Interpreter;
 using UnityEngine.UI;
 
+namespace CYF.Classes {
 [CYFLuaClass("Sprite")]
 public class LuaSpriteController {
     [MoonSharpHidden] public CYFSprite spr;
@@ -850,4 +851,5 @@ public class LuaSpriteController {
             tab[i] = GetChild(i + 1);
         return tab;
     }
+}
 }

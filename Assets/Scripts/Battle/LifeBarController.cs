@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+namespace CYF.Classes {
 /// <summary>
 /// Controller for all the lifebars in the game. To be used with the HPBar prefab.
 /// Contains a background sprite, a mask sprite, and a fill sprite, parented in that order.
@@ -291,4 +292,5 @@ public class LifeBarController : MonoBehaviour {
 
         needInstant = false;
     }
+}
 }

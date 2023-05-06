@@ -1,6 +1,7 @@
 ﻿using CYF;
 using MoonSharp.Interpreter;
 
+namespace CYF.Classes.Overworld {
 [CYFLuaClass("Inventory"), CYFOverworldClass]
 public class LuaInventoryOW {
     public ScriptWrapper appliedScript;
@@ -36,4 +37,5 @@ public class LuaInventoryOW {
     [CYFEventFunction] public int GetItemCount() { try { return Inventory.inventory.Count; } finally { appliedScript.Call("CYFEventNextCommand"); } }
 
     [CYFEventFunction] public void SpawnBoxMenu() { if (StCoroutine != null) StCoroutine("ISpawnBoxMenu", null, appliedScript.GetVar("_internalScriptName").String); }
+}
 }

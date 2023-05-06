@@ -1,5 +1,7 @@
+using CYF.Classes.Overworld;
 using MoonSharp.Interpreter;
 
+namespace CYF.Scripts {
 public class EventScriptTemplate : ScriptTemplate {
     [MoonSharpHidden] public override ScriptType scriptType { get { return ScriptType.EVENT; } }
 
@@ -9,4 +11,5 @@ public class EventScriptTemplate : ScriptTemplate {
     public static LuaInventoryOW FInventory { get { return EventManager.instance.luaInventoryOw; } }
     public static LuaScreenOW FScreen { get { return EventManager.instance.luaScreenOw; } }
     public static LuaMapOW FMap { get { return EventManager.instance.luaMapOw; } }
+}
 }

@@ -2,6 +2,7 @@
 using MoonSharp.Interpreter;
 using System.Collections;
 
+namespace CYF.Classes {
 /// <summary>
 /// Lua binding to manipulate in-game music and play sounds.
 /// </summary>
@@ -116,4 +117,5 @@ public class MusicManager {
         get { return GetSoundDictionary(key); }
         set { SetSoundDictionary(key, value); }
     }
+}
 }

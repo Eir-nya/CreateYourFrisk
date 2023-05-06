@@ -1,4 +1,5 @@
-﻿[CYFLuaClass("Discord")]
+﻿namespace CYF.Classes {
+[CYFLuaClass("Discord")]
 public class LuaDiscord {
     public void SetName(string name) {
         if (name == null) throw new CYFException("Discord.SetName: Argument cannot be nil.");
@@ -31,4 +32,5 @@ public class LuaDiscord {
         DiscordControls.ClearTime(reset);
         DiscordControls.UpdatePresence();
     }
+}
 }

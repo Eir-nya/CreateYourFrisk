@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using CYF.Classes;
+using UnityEngine;
 
 [System.Serializable]public class PlayerCharacter {
     public static PlayerCharacter instance;

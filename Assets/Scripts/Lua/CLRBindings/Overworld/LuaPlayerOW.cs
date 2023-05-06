@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using MoonSharp.Interpreter;
 
+namespace CYF.Classes.Overworld {
 [CYFLuaClass("Player"), CYFOverworldClass]
 public class LuaPlayerOW {
     public ScriptWrapper appliedScript;
@@ -161,4 +162,5 @@ public class LuaPlayerOW {
         tp.transform.position = PlayerOverworld.instance.gameObject.transform.position;
         EventManager.instance.EndEvent();
     }
+}
 }

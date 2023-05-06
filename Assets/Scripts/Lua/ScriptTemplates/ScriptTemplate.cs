@@ -1,6 +1,8 @@
+using CYF.Classes;
 using MoonSharp.Interpreter;
 using UnityEngine;
 
+namespace CYF.Scripts {
 public enum ScriptType {
     ENCOUNTER,
     ENEMY,
@@ -105,4 +107,5 @@ public abstract class ScriptTemplate {
     public static LuaTextManager CreateText(Script scr, DynValue text, DynValue position, int textWidth, string layer = "BelowPlayer", int bubbleHeight = -1) { return LuaTextManager.CreateText(scr, text, position, textWidth, layer, bubbleHeight); }
 
     [CYFDontAddToScript] public static void OnTextDisplay(LuaTextManager text) {}
+}
 }

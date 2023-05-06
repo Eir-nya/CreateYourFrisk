@@ -1,6 +1,7 @@
+using CYF.Classes;
 using MoonSharp.Interpreter;
-using UnityEngine;
 
+namespace CYF.Scripts {
 public class WaveScriptTemplate : ScriptTemplate {
     [MoonSharpHidden] public override ScriptType scriptType { get { return ScriptType.WAVE; } }
 
@@ -35,4 +36,5 @@ public class WaveScriptTemplate : ScriptTemplate {
     [CYFDontAddToScript] public static void Update() {}
     [CYFDontAddToScript] public static void EndingWave() {}
     public static void EndWave() { UIController.instance.encounter.EndWaveTimer(); }
+}
 }

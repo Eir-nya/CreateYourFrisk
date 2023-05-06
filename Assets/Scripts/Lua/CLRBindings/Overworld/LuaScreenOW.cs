@@ -2,6 +2,7 @@
 using UnityEngine.UI;
 using MoonSharp.Interpreter;
 
+namespace CYF.Classes.Overworld {
 [CYFLuaClass("Screen"), CYFOverworldClass]
 public class LuaScreenOW {
     public ScriptWrapper appliedScript;
@@ -136,4 +137,5 @@ public class LuaScreenOW {
     [CYFEventFunction] public void ResetCameraPosition(int speed = 5, bool straightLine = false, bool waitEnd = true) {
         if (StCoroutine != null) StCoroutine("IMoveCamera", new object[] { 0, 0, speed, straightLine, waitEnd, "Screen.ResetCameraPosition" }, appliedScript.GetVar("_internalScriptName").String);
     }
+}
 }

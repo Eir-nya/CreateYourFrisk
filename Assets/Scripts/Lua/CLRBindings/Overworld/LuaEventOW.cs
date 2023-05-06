@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+namespace CYF.Classes.Overworld {
 [CYFLuaClass("Event"), CYFOverworldClass]
 public class LuaEventOW {
     //private TextManager textmgr;
@@ -366,4 +367,5 @@ public class LuaEventOW {
         }
         throw new CYFException("Event.GetSpeed: The event \"" + name + "\" doesn't exist.");
     }
+}
 }

@@ -1,6 +1,7 @@
 ﻿using CYF;
 using System.Collections.Generic;
 
+namespace CYF.Classes {
 [CYFLuaClass("Inventory")]
 public class LuaInventory {
     public string GetItem(int index) {
@@ -90,4 +91,5 @@ public class LuaInventory {
     public void SetAmount(int amount) {
         Inventory.itemStatAmount = amount;
     }
+}
 }

@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using CYF.Classes;
+using UnityEngine;
 
 public class UIStats : MonoBehaviour {
     public static UIStats instance;

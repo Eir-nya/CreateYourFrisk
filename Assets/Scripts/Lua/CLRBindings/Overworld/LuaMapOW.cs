@@ -3,6 +3,7 @@ using UnityEngine;
 using MoonSharp.Interpreter;
 using UnityEngine.SceneManagement;
 
+namespace CYF.Classes.Overworld {
 [CYFLuaClass("Map"), CYFOverworldClass]
 public class LuaMapOW {
     public ScriptWrapper appliedScript;
@@ -99,4 +100,5 @@ public class LuaMapOW {
         try { return SceneManager.GetActiveScene().name == mapName || GlobalControls.GameMapData.Values.Any(md => md.Name == mapName); }
         finally { appliedScript.Call("CYFEventNextCommand"); }
     }
+}
 }
